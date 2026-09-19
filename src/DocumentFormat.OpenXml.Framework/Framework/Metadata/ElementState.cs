@@ -5,15 +5,19 @@ namespace DocumentFormat.OpenXml.Framework.Metadata
 {
     internal readonly struct ElementState
     {
-        public bool IsEmpty => Attributes.IsEmpty;
+        // Only the attribute values are stored as the attribute metadata is available from the element metadata,
+        // which saves a field on every element.
+        private readonly OpenXmlSimpleType?[] _attributeData;
+
+        public bool IsEmpty => _attributeData is null;
 
         public ElementState(IElementMetadata metadata)
         {
-            Attributes = new AttributeCollection(metadata.Attributes);
+            _attributeData = AttributeCollection.CreateData(metadata.Attributes);
             Metadata = metadata;
         }
 
-        public AttributeCollection Attributes { get; }
+        public AttributeCollection Attributes => new(Metadata.Attributes, _attributeData);
 
         public IElementMetadata Metadata { get; }
     }

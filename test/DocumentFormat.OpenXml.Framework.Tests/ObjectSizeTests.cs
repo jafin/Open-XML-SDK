@@ -21,17 +21,17 @@ public class ObjectSizeTests
         _output = output;
     }
 
-    [InlineData(typeof(TestOpenXmlElement), 48, 64, 0, 4)]
+    [InlineData(typeof(TestOpenXmlElement), 40, 56, 0, 4)]
     [InlineData(typeof(TestOpenXmlElement.FeatureCollection), 24, 40, 0, 3)]
     [InlineData(typeof(TestOpenXmlPackage), 24, 40, 3, 5)]
     [InlineData(typeof(TestOpenXmlPackage.FeatureCollection), 96, 112, 0, 11)]
     [InlineData(typeof(TestOpenXmlPart), 32, 48, 7, 5)]
     [InlineData(typeof(TestOpenXmlPart.FeatureCollection), 48, 64, 0, 5)]
     [InlineData(typeof(TestOpenXmlPartContainer), 8, 24, 0, 1)]
-    [InlineData(typeof(TestOpenXmlCompositeElement), 56, 72, 0, 5)]
-    [InlineData(typeof(TestOpenXmlLeafElement), 56, 72, 0, 5)]
-    [InlineData(typeof(TestOpenXmlLeafTextElement), 64, 80, 0, 6)]
-    [InlineData(typeof(OpenXmlUnknownElement), 88, 104, 0, 9)]
+    [InlineData(typeof(TestOpenXmlCompositeElement), 48, 64, 0, 5)]
+    [InlineData(typeof(TestOpenXmlLeafElement), 48, 64, 0, 5)]
+    [InlineData(typeof(TestOpenXmlLeafTextElement), 56, 72, 0, 6)]
+    [InlineData(typeof(OpenXmlUnknownElement), 80, 96, 0, 9)]
     [Theory]
     public void VerifySize(Type type, int size, int fullSize, int padding, int fieldCount)
     {
