@@ -77,6 +77,8 @@ namespace DocumentFormat.OpenXml
 
         private protected virtual IFeatureCollection CreateFeatures() => new ElementFeatureCollection(this);
 
+        internal bool HasFeatureCollection => _features is not null;
+
         private MarkupCompatibilityAttributes? McAttributesFiled
         {
             get
@@ -186,14 +188,23 @@ namespace DocumentFormat.OpenXml
             {
                 if (_state.IsEmpty)
                 {
-                    _state = new Framework.Metadata.ElementState(Metadata);
+                    _state = new Framework.Metadata.ElementState(CreateMetadata());
                 }
 
                 return _state;
             }
         }
 
-        internal IElementMetadata Metadata => Features.GetRequired<IElementMetadata>();
+        internal IElementMetadata Metadata => RawState.Metadata;
+
+        /// <summary>
+        /// Resolves the metadata without creating a feature collection if one does not exist, as that is a
+        /// per-element allocation that adds up for large documents.
+        /// </summary>
+        private IElementMetadata CreateMetadata()
+            => _features is null
+                ? ElementFeatureCollection.GetInherited<IElementMetadataFactoryFeature>(this).GetMetadata(this)
+                : _features.GetRequired<IElementMetadata>();
 
         /// <summary>
         /// Gets an array of fixed attributes which will be parsed out if they are not yet parsed. If parsing is not required, please
@@ -1548,8 +1559,6 @@ namespace DocumentFormat.OpenXml
             // read attributes
             if (xmlReader.HasAttributes)
             {
-                var resolver = Features.GetNamespaceResolver();
-
                 while (xmlReader.MoveToNextAttribute())
                 {
                     if (!TrySetFixedAttribute(new(xmlReader.NamespaceURI, xmlReader.LocalName), xmlReader.Value, ((XmlConvertingReader)xmlReader).StrictRelationshipFound))
@@ -1828,7 +1837,8 @@ namespace DocumentFormat.OpenXml
         {
             var newElement = default(OpenXmlElement);
 
-            if (Features.GetNamespaceResolver().IsKnown(qname.Namespace))
+            // Avoid Features as this is called for each child created while parsing
+            if (ElementFeatureCollection.GetInherited<IOpenXmlNamespaceResolver>(this).IsKnown(qname.Namespace))
             {
                 newElement = ElementFactory(qname);
 
@@ -2677,7 +2687,7 @@ namespace DocumentFormat.OpenXml
                         return _elementMetadataFeature ??= CreateMetadata();
                     }
 
-                    return GetPartFeatures()?[key] ?? Default?[key];
+                    return GetInherited(_owner, key, Default);
                 }
 
                 set => throw new NotImplementedException();
@@ -2688,6 +2698,17 @@ namespace DocumentFormat.OpenXml
             private IFeatureCollection? GetPartFeatures() => _owner.GetPart()?.Features;
 
             private IElementMetadata CreateMetadata() => this.GetRequired<IElementMetadataFactoryFeature>().GetMetadata(_owner);
+
+            /// <summary>
+            /// Gets a feature the way an element's feature collection would for anything other than its own features.
+            /// </summary>
+            internal static TFeature GetInherited<TFeature>(OpenXmlElement owner)
+                => GetInherited(owner, typeof(TFeature), FeatureCollection.Default) is TFeature feature
+                    ? feature
+                    : throw new NotSupportedException(SR.Format(ExceptionMessages.FeatureNotRegistered, typeof(TFeature).FullName));
+
+            private static object? GetInherited(OpenXmlElement owner, Type key, IFeatureCollection? defaultFeatures)
+                => owner.GetPart()?.Features[key] ?? defaultFeatures?[key];
 
             public void Set<TFeature>(TFeature? instance) => this[typeof(TFeature)] = instance;
 
