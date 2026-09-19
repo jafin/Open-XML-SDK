@@ -38,6 +38,22 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void CreatingChildrenDoesNotCreateAttributeStorage()
+        {
+            // Parents look up their metadata to create children; that should not allocate storage for attributes they do not have
+            const string OuterXml = "<x:row xmlns:x=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><x:c><x:v>3</x:v></x:c></x:row>";
+
+            var row = new Spreadsheet.Row(OuterXml);
+            var cell = Assert.IsType<Spreadsheet.Cell>(row.FirstChild);
+
+            Assert.Equal("3", cell.CellValue!.Text);
+            Assert.False(cell.HasAttributeStorage);
+
+            Assert.Null(cell.CellReference);
+            Assert.True(cell.HasAttributeStorage);
+        }
+
+        [Fact]
         public void MetadataMatchesFeatureCollectionAfterParsing()
         {
             const string OuterXml = "<x:c xmlns:x=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" r=\"A1\"><x:v>3</x:v></x:c>";

@@ -67,6 +67,8 @@ namespace DocumentFormat.OpenXml
 
         internal bool HasFeatureCollection => _rareState?.Features is not null;
 
+        internal bool HasAttributeStorage => _state.HasAttributeData;
+
         private MarkupCompatibilityAttributes? McAttributesFiled
         {
             get => _rareState?.McAttributes;
@@ -156,16 +158,27 @@ namespace DocumentFormat.OpenXml
         {
             get
             {
-                if (_state.IsEmpty)
+                if (!_state.HasAttributeData)
                 {
-                    _state = new Framework.Metadata.ElementState(CreateMetadata());
+                    _state = new Framework.Metadata.ElementState(Metadata);
                 }
 
                 return _state;
             }
         }
 
-        internal IElementMetadata Metadata => RawState.Metadata;
+        internal IElementMetadata Metadata
+        {
+            get
+            {
+                if (_state.IsEmpty)
+                {
+                    _state = Framework.Metadata.ElementState.MetadataOnly(CreateMetadata());
+                }
+
+                return _state.Metadata;
+            }
+        }
 
         /// <summary>
         /// Resolves the metadata without creating a feature collection if one does not exist, as that is a
