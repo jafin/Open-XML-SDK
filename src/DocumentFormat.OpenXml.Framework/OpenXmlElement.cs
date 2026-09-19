@@ -27,35 +27,21 @@ namespace DocumentFormat.OpenXml
     /// </remarks>
     public abstract partial class OpenXmlElement : IEnumerable<OpenXmlElement>, ICloneable
     {
-        private IFeatureCollection? _features;
+        private RareElementState? _rareState;
 
-        private string _rawOuterXml = string.Empty;
-
-        internal MiscAttrContainer? MiscAttrContainer { get; set; }
+        private RareElementState RareState => _rareState ??= new();
 
         // attributes not defined in schema
         private List<OpenXmlAttribute>? ExtendedAttributesField
         {
-            get
-            {
-                if (MiscAttrContainer is null)
-                {
-                    return null;
-                }
-                else
-                {
-                    return MiscAttrContainer.ExtendedAttributesField;
-                }
-            }
+            get => _rareState?.ExtendedAttributesField;
 
             set
             {
-                if (MiscAttrContainer is null)
+                if (value is not null || _rareState is not null)
                 {
-                    MiscAttrContainer = new MiscAttrContainer();
+                    RareState.ExtendedAttributesField = value;
                 }
-
-                MiscAttrContainer.ExtendedAttributesField = value;
             }
         }
 
@@ -66,66 +52,44 @@ namespace DocumentFormat.OpenXml
         {
             get
             {
-                if (_features is null)
+                var state = RareState;
+
+                if (state.Features is null)
                 {
-                    _features = CreateFeatures();
+                    state.Features = CreateFeatures();
                 }
 
-                return _features;
+                return state.Features;
             }
         }
 
         private protected virtual IFeatureCollection CreateFeatures() => new ElementFeatureCollection(this);
 
-        internal bool HasFeatureCollection => _features is not null;
+        internal bool HasFeatureCollection => _rareState?.Features is not null;
 
         private MarkupCompatibilityAttributes? McAttributesFiled
         {
-            get
-            {
-                if (MiscAttrContainer is null)
-                {
-                    return null;
-                }
-                else
-                {
-                    return MiscAttrContainer.McAttributes;
-                }
-            }
+            get => _rareState?.McAttributes;
 
             set
             {
-                if (MiscAttrContainer is null)
+                if (value is not null || _rareState is not null)
                 {
-                    MiscAttrContainer = new MiscAttrContainer();
+                    RareState.McAttributes = value;
                 }
-
-                MiscAttrContainer.McAttributes = value;
             }
         }
 
         internal List<KeyValuePair<string, string>>? NamespaceDeclField
         {
-            get
-            {
-                if (MiscAttrContainer is null)
-                {
-                    return null;
-                }
-                else
-                {
-                    return MiscAttrContainer.NsMappings;
-                }
-            }
+            get => _rareState?.NsMappings;
 
             set
             {
-                if (MiscAttrContainer is null)
+                if (value is not null || _rareState is not null)
                 {
-                    MiscAttrContainer = new MiscAttrContainer();
+                    RareState.NsMappings = value;
                 }
-
-                MiscAttrContainer.NsMappings = value;
             }
         }
 
@@ -164,16 +128,22 @@ namespace DocumentFormat.OpenXml
         /// <summary>
         /// Gets a value indicating whether the inner raw xml is parsed.
         /// </summary>
-        internal bool XmlParsed => string.IsNullOrEmpty(_rawOuterXml);
+        internal bool XmlParsed => string.IsNullOrEmpty(_rareState?.RawOuterXml);
 
         /// <summary>
         /// Gets or sets the raw OuterXml.
         /// </summary>
         internal string RawOuterXml
         {
-            get => _rawOuterXml;
+            get => _rareState?.RawOuterXml ?? string.Empty;
 
-            set => _rawOuterXml = value ?? string.Empty;
+            set
+            {
+                if (!string.IsNullOrEmpty(value) || _rareState is not null)
+                {
+                    RareState.RawOuterXml = value;
+                }
+            }
         }
 
         private Framework.Metadata.ElementState _state;
@@ -202,9 +172,9 @@ namespace DocumentFormat.OpenXml
         /// per-element allocation that adds up for large documents.
         /// </summary>
         private IElementMetadata CreateMetadata()
-            => _features is null
-                ? ElementFeatureCollection.GetInherited<IElementMetadataFactoryFeature>(this).GetMetadata(this)
-                : _features.GetRequired<IElementMetadata>();
+            => _rareState?.Features is { } features
+                ? features.GetRequired<IElementMetadata>()
+                : ElementFeatureCollection.GetInherited<IElementMetadataFactoryFeature>(this).GetMetadata(this);
 
         /// <summary>
         /// Gets an array of fixed attributes which will be parsed out if they are not yet parsed. If parsing is not required, please
@@ -475,7 +445,7 @@ namespace DocumentFormat.OpenXml
                 }
                 else
                 {
-                    _rawOuterXml = string.Empty;
+                    RawOuterXml = string.Empty;
                 }
             }
         }
