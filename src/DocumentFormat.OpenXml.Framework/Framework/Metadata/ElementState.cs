@@ -31,9 +31,9 @@ namespace DocumentFormat.OpenXml.Framework.Metadata
         public static ElementState MetadataOnly(IElementMetadata metadata) => new(metadata, null);
 
         /// <summary>
-        /// Gets the attributes. Entries are nil if the state was created with <see cref="MetadataOnly(IElementMetadata)"/>.
+        /// Gets the attributes. This is empty if the state was created with <see cref="MetadataOnly(IElementMetadata)"/>.
         /// </summary>
-        public AttributeCollection Attributes => new(Metadata.Attributes, _attributeData!);
+        public AttributeCollection Attributes => _attributeData is null ? default : new(Metadata.Attributes, _attributeData);
 
         public IElementMetadata Metadata { get; }
     }

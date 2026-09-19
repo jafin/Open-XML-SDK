@@ -173,7 +173,15 @@ namespace DocumentFormat.OpenXml
             {
                 if (_state.IsEmpty)
                 {
-                    _state = Framework.Metadata.ElementState.MetadataOnly(CreateMetadata());
+                    var metadata = CreateMetadata();
+
+                    // Another thread may have created the state, along with its attributes, while the metadata was resolved
+                    if (_state.IsEmpty)
+                    {
+                        _state = Framework.Metadata.ElementState.MetadataOnly(metadata);
+                    }
+
+                    return metadata;
                 }
 
                 return _state.Metadata;
@@ -444,9 +452,12 @@ namespace DocumentFormat.OpenXml
                     NamespaceDeclField = null;
                     ExtendedAttributesField = null;
 
-                    foreach (var attribute in RawState.Attributes)
+                    if (_state.HasAttributeData)
                     {
-                        attribute.Value = null;
+                        foreach (var attribute in _state.Attributes)
+                        {
+                            attribute.Value = null;
+                        }
                     }
 
                     MCAttributes = null;
@@ -1951,7 +1962,7 @@ namespace DocumentFormat.OpenXml
         /// For <see cref="OpenXmlUnknownElement"/>, always returns <c>false</c>
         /// For <see cref="OpenXmlMiscNode"/>, always returns <c>true</c>
         /// </summary>
-        internal FileFormatVersions InitialVersion => RawState.Metadata.Availability;
+        internal FileFormatVersions InitialVersion => Metadata.Availability;
 
         #endregion
 
