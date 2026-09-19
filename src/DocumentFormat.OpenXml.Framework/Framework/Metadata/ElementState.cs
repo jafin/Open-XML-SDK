@@ -11,14 +11,14 @@ namespace DocumentFormat.OpenXml.Framework.Metadata
     {
         // Only the attribute values are stored as the attribute metadata is available from the element metadata,
         // which saves a field on every element.
-        private readonly OpenXmlSimpleType?[] _attributeData;
+        private readonly object?[] _attributeData;
 
         public ElementState(IElementMetadata metadata)
             : this(metadata, AttributeCollection.CreateData(metadata.Attributes))
         {
         }
 
-        public ElementState(IElementMetadata metadata, OpenXmlSimpleType?[] attributeData)
+        public ElementState(IElementMetadata metadata, object?[] attributeData)
         {
             Metadata = metadata;
             _attributeData = attributeData;

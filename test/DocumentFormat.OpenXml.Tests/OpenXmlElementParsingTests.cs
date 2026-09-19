@@ -54,6 +54,31 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void ParsedAttributesKeepTheirTextUntilTheValueIsRead()
+        {
+            const string OuterXml = "<x:c xmlns:x=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" r=\"A1\"><x:v>3</x:v></x:c>";
+
+            var cell = new Spreadsheet.Cell(OuterXml);
+            var entry = cell.ParsedState.Attributes.GetProperty(nameof(Spreadsheet.Cell.CellReference));
+
+            Assert.True(entry.HasValue);
+            Assert.Equal("A1", entry.InnerText);
+            Assert.IsType<string>(entry.RawValue);
+
+            // Reading the value creates it, and every later read returns that same instance so it can be modified in place
+            var reference = cell.CellReference;
+
+            Assert.Equal("A1", reference!.Value);
+            Assert.IsType<StringValue>(entry.RawValue);
+            Assert.Same(reference, cell.CellReference);
+
+            reference.Value = "B2";
+
+            Assert.Equal("B2", cell.CellReference!.Value);
+            Assert.Equal("B2", entry.InnerText);
+        }
+
+        [Fact]
         public void MetadataMatchesFeatureCollectionAfterParsing()
         {
             const string OuterXml = "<x:c xmlns:x=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" r=\"A1\"><x:v>3</x:v></x:c>";

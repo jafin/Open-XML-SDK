@@ -153,7 +153,7 @@ namespace DocumentFormat.OpenXml
         // them would otherwise be able to discard the other or to be read half written. They are created at different
         // times, as an element needs its metadata to create its children whether or not it has any attributes.
         private IElementMetadata? _metadata;
-        private OpenXmlSimpleType?[]? _attributeData;
+        private object?[]? _attributeData;
 
         /// <summary>
         /// Gets an array of fixed attributes (attributes that are defined in the schema) without forcing any parsing of the element.
@@ -254,7 +254,7 @@ namespace DocumentFormat.OpenXml
 
                 foreach (var value in ParsedState.Attributes)
                 {
-                    if (value.Value is not null)
+                    if (value.HasValue)
                     {
                         return true;
                     }
@@ -500,10 +500,10 @@ namespace DocumentFormat.OpenXml
             {
                 foreach (var attribute in ParsedState.Attributes)
                 {
-                    if (attribute.Value is not null && attribute.Property.QName.Equals(qname))
+                    if (attribute.HasValue && attribute.Property.QName.Equals(qname))
                     {
                         var prefix = Features.GetNamespaceResolver().LookupPrefix(qname.Namespace.Uri) ?? string.Empty;
-                        return new OpenXmlAttribute(qname, prefix, attribute.Value.InnerText);
+                        return new OpenXmlAttribute(qname, prefix, attribute.InnerText);
                     }
                 }
 
@@ -539,11 +539,11 @@ namespace DocumentFormat.OpenXml
 
                 foreach (var attribute in ParsedState.Attributes)
                 {
-                    if (attribute.Value is not null)
+                    if (attribute.HasValue)
                     {
                         var qname = attribute.Property.QName;
                         var prefix = resolver.LookupPrefix(qname.Namespace.Uri) ?? string.Empty;
-                        attributes.Add(new OpenXmlAttribute(qname, prefix, attribute.Value.InnerText));
+                        attributes.Add(new OpenXmlAttribute(qname, prefix, attribute.InnerText));
                     }
                 }
 
@@ -1459,7 +1459,7 @@ namespace DocumentFormat.OpenXml
             {
                 foreach (var attribute in ParsedState.Attributes)
                 {
-                    if (attribute.Value is not null)
+                    if (attribute.HasValue)
                     {
                         var ns = attribute.Property.QName.Namespace.Uri;
                         var prefix = string.Empty;
@@ -1474,7 +1474,7 @@ namespace DocumentFormat.OpenXml
                         }
 
                         xmlWriter.WriteStartAttribute(prefix, attribute.Property.QName.Name, ns);
-                        xmlWriter.WriteString(attribute.Value.InnerText);
+                        xmlWriter.WriteString(attribute.InnerText);
                         xmlWriter.WriteEndAttribute();
                     }
                 }
@@ -1520,12 +1520,7 @@ namespace DocumentFormat.OpenXml
 
                 if (!attribute.IsNil)
                 {
-                    if (attribute.Value is null)
-                    {
-                        attribute.Value = attribute.Property.CreateNew();
-                    }
-
-                    attribute.Value.InnerText = value;
+                    attribute.InnerText = value;
                     return true;
                 }
             }
@@ -1869,9 +1864,16 @@ namespace DocumentFormat.OpenXml
                 {
                     var attribute = container.ParsedState.Attributes[i];
 
-                    if (attribute.Value is not null)
+                    var target = RawState.Attributes[i];
+
+                    switch (attribute.RawValue)
                     {
-                        RawState.Attributes[i].Value = (OpenXmlSimpleType)attribute.Value.Clone();
+                        case OpenXmlSimpleType value:
+                            target.Value = (OpenXmlSimpleType)value.Clone();
+                            break;
+                        case string text:
+                            target.InnerText = text;
+                            break;
                     }
                 }
 
@@ -2457,7 +2459,7 @@ namespace DocumentFormat.OpenXml
 
             foreach (var attribute in RawState.Attributes)
             {
-                if (attribute.Value is not null)
+                if (attribute.HasValue)
                 {
                     var action = OpenXmlElementContext.MCContext.GetAttributeAction(attribute.Property.QName, OpenXmlElementContext.MCSettings.TargetFileFormatVersions);
 

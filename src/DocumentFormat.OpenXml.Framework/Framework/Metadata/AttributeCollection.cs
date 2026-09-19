@@ -4,15 +4,18 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace DocumentFormat.OpenXml.Framework.Metadata
 {
     internal readonly struct AttributeCollection : IEnumerable<AttributeCollection.AttributeEntry>
     {
-        private readonly OpenXmlSimpleType?[] _data;
+        // Each slot holds either the text an attribute was loaded with, or an OpenXmlSimpleType for it. Creating the
+        // type is deferred until something asks for the typed value, as most attributes are only ever read as text.
+        private readonly object?[] _data;
         private readonly ReadOnlyArray<AttributeMetadata> _attributes;
 
-        public AttributeCollection(ReadOnlyArray<AttributeMetadata> tags, OpenXmlSimpleType?[] data)
+        public AttributeCollection(ReadOnlyArray<AttributeMetadata> tags, object?[] data)
         {
             _attributes = tags;
             _data = data;
@@ -21,8 +24,8 @@ namespace DocumentFormat.OpenXml.Framework.Metadata
         /// <summary>
         /// Creates the storage for the values of the given attributes, to be viewed with an <see cref="AttributeCollection"/>.
         /// </summary>
-        public static OpenXmlSimpleType?[] CreateData(ReadOnlyArray<AttributeMetadata> tags)
-            => tags.Length == 0 ? Cached.Array<OpenXmlSimpleType>() : new OpenXmlSimpleType[tags.Length];
+        public static object?[] CreateData(ReadOnlyArray<AttributeMetadata> tags)
+            => tags.Length == 0 ? Cached.Array<object>() : new object[tags.Length];
 
         public bool IsEmpty => _data is null;
 
@@ -112,7 +115,71 @@ namespace DocumentFormat.OpenXml.Framework.Metadata
 
             public ref readonly AttributeMetadata Property => ref _collection._attributes[_index];
 
-            public ref OpenXmlSimpleType? Value => ref _collection._data[_index];
+            /// <summary>
+            /// Gets a value indicating whether the attribute is set, without creating its <see cref="OpenXmlSimpleType"/>.
+            /// </summary>
+            public bool HasValue => !IsNil && _collection._data[_index] is not null;
+
+            /// <summary>
+            /// Gets or sets the value, creating it from the loaded text if that has not happened yet. The created value is stored
+            /// so that callers always get the same instance, which they may modify in place.
+            /// </summary>
+            public OpenXmlSimpleType? Value
+            {
+                get
+                {
+                    var current = _collection._data[_index];
+
+                    if (current is not string text)
+                    {
+                        return (OpenXmlSimpleType?)current;
+                    }
+
+                    var created = Property.CreateNew();
+                    created.InnerText = text;
+
+                    // Another thread may be creating the value at the same time; all callers must get the same instance
+                    return Interlocked.CompareExchange(ref _collection._data[_index], created, current) as OpenXmlSimpleType ?? created;
+                }
+
+                set => _collection._data[_index] = value;
+            }
+
+            /// <summary>
+            /// Gets or sets the text of the attribute without creating its <see cref="OpenXmlSimpleType"/>. Setting it
+            /// updates the value in place if one has already been created.
+            /// </summary>
+            public string? InnerText
+            {
+                get => _collection._data[_index] switch
+                {
+                    string text => text,
+                    OpenXmlSimpleType value => value.InnerText,
+                    _ => null,
+                };
+
+                set
+                {
+                    if (_collection._data[_index] is OpenXmlSimpleType existing)
+                    {
+                        existing.InnerText = value;
+                    }
+                    else if (value is not null)
+                    {
+                        _collection._data[_index] = value;
+                    }
+                    else
+                    {
+                        // An attribute that is present without text still needs a value to be written back out
+                        _collection._data[_index] = Property.CreateNew();
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Gets the stored text or value, whichever the attribute currently holds.
+            /// </summary>
+            public object? RawValue => _collection._data[_index];
         }
     }
 }
