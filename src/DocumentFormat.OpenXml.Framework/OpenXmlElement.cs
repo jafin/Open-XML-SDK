@@ -54,12 +54,7 @@ namespace DocumentFormat.OpenXml
             {
                 var state = RareState;
 
-                if (state.Features is null)
-                {
-                    state.Features = CreateFeatures();
-                }
-
-                return state.Features;
+                return state.Features ??= CreateFeatures();
             }
         }
 
@@ -68,6 +63,11 @@ namespace DocumentFormat.OpenXml
         internal bool HasFeatureCollection => _rareState?.Features is not null;
 
         internal bool HasAttributeStorage => _attributeData is not null;
+
+        /// <summary>
+        /// Gets the namespace resolver without creating a feature collection for this element.
+        /// </summary>
+        private IOpenXmlNamespaceResolver NamespaceResolver => ElementFeatureCollection.GetInherited<IOpenXmlNamespaceResolver>(this);
 
         private MarkupCompatibilityAttributes? McAttributesFiled
         {
@@ -179,13 +179,12 @@ namespace DocumentFormat.OpenXml
         internal IElementMetadata Metadata => _metadata ??= CreateMetadata();
 
         /// <summary>
-        /// Resolves the metadata without creating a feature collection if one does not exist, as that is a
-        /// per-element allocation that adds up for large documents.
+        /// Resolves the metadata without creating a feature collection, as that is a per-element allocation that adds
+        /// up for large documents. This is the only place element metadata is resolved, so that an element and its
+        /// feature collection cannot end up with different metadata.
         /// </summary>
         private IElementMetadata CreateMetadata()
-            => _rareState?.Features is { } features
-                ? features.GetRequired<IElementMetadata>()
-                : ElementFeatureCollection.GetInherited<IElementMetadataFactoryFeature>(this).GetMetadata(this);
+            => ElementFeatureCollection.GetInherited<IElementMetadataFactoryFeature>(this).GetMetadata(this);
 
         /// <summary>
         /// Gets an array of fixed attributes which will be parsed out if they are not yet parsed. If parsing is not required, please
@@ -335,7 +334,7 @@ namespace DocumentFormat.OpenXml
                     return prefix;
                 }
 
-                return Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri) ?? string.Empty;
+                return NamespaceResolver.LookupPrefix(QName.Namespace.Uri) ?? string.Empty;
             }
         }
 
@@ -397,7 +396,7 @@ namespace DocumentFormat.OpenXml
                 else
                 {
                     using (TextReader stringReader = new StringReader(RawOuterXml))
-                    using (var xmlReader = XmlConvertingReaderFactory.Create(stringReader, Features.GetNamespaceResolver()))
+                    using (var xmlReader = XmlConvertingReaderFactory.Create(stringReader, NamespaceResolver))
                     {
                         xmlReader.Read();
                         return xmlReader.ReadInnerXml();
@@ -450,14 +449,7 @@ namespace DocumentFormat.OpenXml
                     MCAttributes = null;
                 }
 
-                if (!string.IsNullOrEmpty(value))
-                {
-                    RawOuterXml = value;
-                }
-                else
-                {
-                    RawOuterXml = string.Empty;
-                }
+                RawOuterXml = value;
             }
         }
 
@@ -502,7 +494,7 @@ namespace DocumentFormat.OpenXml
                 {
                     if (attribute.HasValue && attribute.Property.QName.Equals(qname))
                     {
-                        var prefix = Features.GetNamespaceResolver().LookupPrefix(qname.Namespace.Uri) ?? string.Empty;
+                        var prefix = NamespaceResolver.LookupPrefix(qname.Namespace.Uri) ?? string.Empty;
                         return new OpenXmlAttribute(qname, prefix, attribute.InnerText);
                     }
                 }
@@ -534,7 +526,7 @@ namespace DocumentFormat.OpenXml
         {
             if (HasAttributes)
             {
-                var resolver = Features.GetNamespaceResolver();
+                var resolver = NamespaceResolver;
                 var attributes = new List<OpenXmlAttribute>(ParsedState.Attributes.Length);
 
                 foreach (var attribute in ParsedState.Attributes)
@@ -1085,7 +1077,7 @@ namespace DocumentFormat.OpenXml
                 // in this case, we use the predefined prefix
                 if (string.IsNullOrEmpty(prefix))
                 {
-                    prefix = Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
+                    prefix = NamespaceResolver.LookupPrefix(QName.Namespace.Uri);
                 }
 
                 xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
@@ -1469,7 +1461,7 @@ namespace DocumentFormat.OpenXml
                             prefix = xmlWriter.LookupPrefix(ns);
                             if (string.IsNullOrEmpty(prefix))
                             {
-                                prefix = Features.GetNamespaceResolver().LookupPrefix(attribute.Property.QName.Namespace.Uri);
+                                prefix = NamespaceResolver.LookupPrefix(attribute.Property.QName.Namespace.Uri);
                             }
                         }
 
@@ -1645,7 +1637,7 @@ namespace DocumentFormat.OpenXml
 
             if (mcAttributes.MustUnderstand is not null && !string.IsNullOrEmpty(mcAttributes.MustUnderstand.Value))
             {
-                var resolver = Features.GetNamespaceResolver();
+                var resolver = NamespaceResolver;
                 var prefixes = MCContext.GetPrefixes(mcAttributes.MustUnderstand.Value);
 
                 foreach (var prefix in prefixes)
@@ -1681,7 +1673,7 @@ namespace DocumentFormat.OpenXml
 
             if (MCAttributes.MustUnderstand is not null && !string.IsNullOrEmpty(MCAttributes.MustUnderstand.Value))
             {
-                var resolver = Features.GetNamespaceResolver();
+                var resolver = NamespaceResolver;
                 var prefixes = MCContext.GetPrefixes(MCAttributes.MustUnderstand.Value);
 
                 foreach (var prefix in prefixes)
@@ -1792,11 +1784,11 @@ namespace DocumentFormat.OpenXml
 #else
                 OpenXmlElementContext.XmlReaderSettings.DtdProcessing = DtdProcessing.Prohibit; // set to prohibit explicitly for security fix
 #endif
-                return XmlConvertingReaderFactory.Create(stringReader, Features.GetNamespaceResolver(), OpenXmlElementContext.XmlReaderSettings);
+                return XmlConvertingReaderFactory.Create(stringReader, NamespaceResolver, OpenXmlElementContext.XmlReaderSettings);
             }
             else
             {
-                return XmlConvertingReaderFactory.Create(stringReader, Features.GetNamespaceResolver(), OpenXmlElementContext.CreateDefaultXmlReaderSettings());
+                return XmlConvertingReaderFactory.Create(stringReader, NamespaceResolver, OpenXmlElementContext.CreateDefaultXmlReaderSettings());
             }
         }
 
@@ -1859,21 +1851,27 @@ namespace DocumentFormat.OpenXml
                     ExtendedAttributesField = new List<OpenXmlAttribute>(container.ExtendedAttributesField);
                 }
 
-                // Copy Attributes.
-                for (var i = 0; i < container.ParsedState.Attributes.Length; i++)
+                // Copy Attributes. The target's storage is only reached for an attribute that has something to copy,
+                // as an element can have attributes without any of the fixed ones being set.
+                var source = container.ParsedState.Attributes;
+
+                for (var i = 0; i < source.Length; i++)
                 {
-                    var attribute = container.ParsedState.Attributes[i];
-
-                    var target = RawState.Attributes[i];
-
-                    switch (attribute.RawValue)
+                    switch (source[i].RawValue)
                     {
                         case OpenXmlSimpleType value:
-                            target.Value = (OpenXmlSimpleType)value.Clone();
-                            break;
+                            {
+                                var target = RawState.Attributes[i];
+                                target.Value = (OpenXmlSimpleType)value.Clone();
+                                break;
+                            }
+
                         case string text:
-                            target.InnerText = text;
-                            break;
+                            {
+                                var target = RawState.Attributes[i];
+                                target.InnerText = text;
+                                break;
+                            }
                     }
                 }
 
@@ -2685,7 +2683,7 @@ namespace DocumentFormat.OpenXml
 
             private IFeatureCollection? GetPartFeatures() => _owner.GetPart()?.Features;
 
-            private IElementMetadata CreateMetadata() => this.GetRequired<IElementMetadataFactoryFeature>().GetMetadata(_owner);
+            private IElementMetadata CreateMetadata() => _owner.Metadata;
 
             /// <summary>
             /// Gets a feature the way an element's feature collection would for anything other than its own features.
@@ -2693,7 +2691,7 @@ namespace DocumentFormat.OpenXml
             internal static TFeature GetInherited<TFeature>(OpenXmlElement owner)
                 => GetInherited(owner, typeof(TFeature), Default) is TFeature feature
                     ? feature
-                    : throw new NotSupportedException(SR.Format(ExceptionMessages.FeatureNotRegistered, typeof(TFeature).FullName));
+                    : throw FeatureExtensions.NotRegistered<TFeature>();
 
             private static object? GetInherited(OpenXmlElement owner, Type key, IFeatureCollection? defaultFeatures)
                 => owner.GetPart()?.Features[key] ?? defaultFeatures?[key];

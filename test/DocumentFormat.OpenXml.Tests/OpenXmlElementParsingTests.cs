@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using DocumentFormat.OpenXml.Presentation;
+using System.Linq;
 using Xunit;
 
 namespace DocumentFormat.OpenXml.Tests
@@ -76,6 +77,25 @@ namespace DocumentFormat.OpenXml.Tests
 
             Assert.Equal("B2", cell.CellReference!.Value);
             Assert.Equal("B2", entry.InnerText);
+        }
+
+        [Fact]
+        public void CloningDoesNotCreateAttributeStorageForUnsetAttributes()
+        {
+            // An element can have attributes without any of the fixed ones being set, and cloning it should not
+            // create storage the clone will never use (see #1511)
+            const string OuterXml = "<x:c xmlns:x=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:foo=\"urn:foo\" foo:bar=\"1\"><x:v>3</x:v></x:c>";
+
+            var cell = new Spreadsheet.Cell(OuterXml);
+
+            Assert.True(cell.HasAttributes);
+            Assert.Null(cell.CellReference);
+
+            var clone = (Spreadsheet.Cell)cell.CloneNode(true);
+
+            Assert.False(clone.HasAttributeStorage);
+            Assert.Equal("1", clone.GetAttributes().Single(a => a.LocalName == "bar").Value);
+            Assert.Equal("3", clone.CellValue!.Text);
         }
 
         [Fact]

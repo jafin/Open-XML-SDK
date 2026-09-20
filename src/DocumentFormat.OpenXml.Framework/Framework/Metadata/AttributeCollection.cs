@@ -27,8 +27,6 @@ namespace DocumentFormat.OpenXml.Framework.Metadata
         public static object?[] CreateData(ReadOnlyArray<AttributeMetadata> tags)
             => tags.Length == 0 ? Cached.Array<object>() : new object[tags.Length];
 
-        public bool IsEmpty => _data is null;
-
         public bool Any() => Length > 0;
 
         public AttributeEntry GetProperty(string propertyName) => this[GetIndex(propertyName)];
@@ -128,18 +126,24 @@ namespace DocumentFormat.OpenXml.Framework.Metadata
             {
                 get
                 {
-                    var current = _collection._data[_index];
-
-                    if (current is not string text)
+                    while (true)
                     {
-                        return (OpenXmlSimpleType?)current;
+                        var current = _collection._data[_index];
+
+                        if (current is not string text)
+                        {
+                            return (OpenXmlSimpleType?)current;
+                        }
+
+                        var created = Property.CreateNew();
+                        created.InnerText = text;
+
+                        // The slot may change while the value is created; every caller must end up with the stored instance
+                        if (ReferenceEquals(Interlocked.CompareExchange(ref _collection._data[_index], created, current), current))
+                        {
+                            return created;
+                        }
                     }
-
-                    var created = Property.CreateNew();
-                    created.InnerText = text;
-
-                    // Another thread may be creating the value at the same time; all callers must get the same instance
-                    return Interlocked.CompareExchange(ref _collection._data[_index], created, current) as OpenXmlSimpleType ?? created;
                 }
 
                 set => _collection._data[_index] = value;
