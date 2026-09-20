@@ -1795,18 +1795,24 @@ namespace DocumentFormat.OpenXml
         internal OpenXmlElement ElementFactory(XmlReader xmlReader)
             => xmlReader.NodeType switch
             {
-                XmlNodeType.Element => CreateElement(new(xmlReader.NamespaceURI, xmlReader.LocalName), xmlReader.Prefix),
+                XmlNodeType.Element => CreateElement(new(xmlReader.NamespaceURI, xmlReader.LocalName), xmlReader.Prefix, (xmlReader as XmlConvertingReader)?.NamespaceResolver),
                 XmlNodeType.Comment or XmlNodeType.ProcessingInstruction or XmlNodeType.XmlDeclaration => new OpenXmlMiscNode(xmlReader.NodeType),
                 XmlNodeType.Text or XmlNodeType.CDATA or XmlNodeType.SignificantWhitespace or XmlNodeType.Whitespace => new OpenXmlMiscNode(xmlReader.NodeType),
                 _ => throw new InvalidOperationException(),
             };
 
         internal OpenXmlElement CreateElement(in OpenXmlQualifiedName qname, string prefix)
+            => CreateElement(qname, prefix, null);
+
+        /// <summary>
+        /// Creates a child element, using the supplied namespace resolver if there is one. This is called for every
+        /// element while parsing, and resolving the namespace resolver from the element walks up to the part root.
+        /// </summary>
+        private OpenXmlElement CreateElement(in OpenXmlQualifiedName qname, string prefix, IOpenXmlNamespaceResolver? resolver)
         {
             var newElement = default(OpenXmlElement);
 
-            // Avoid Features as this is called for each child created while parsing
-            if (ElementFeatureCollection.GetInherited<IOpenXmlNamespaceResolver>(this).IsKnown(qname.Namespace))
+            if ((resolver ?? NamespaceResolver).IsKnown(qname.Namespace))
             {
                 newElement = ElementFactory(qname);
 
