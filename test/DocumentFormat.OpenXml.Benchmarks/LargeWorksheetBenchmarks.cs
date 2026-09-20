@@ -68,6 +68,58 @@ public class LargeWorksheetBenchmarks
     }
 
     /// <summary>
+    /// Loads the worksheet and reads every typed attribute value, the worst case for deferring their creation.
+    /// </summary>
+    [Benchmark]
+    public int ReadAllAttributes()
+    {
+        using var stream = new MemoryStream(_package, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, false);
+
+        var count = 0;
+
+        foreach (var row in GetWorksheetPart(document).Worksheet.Descendants<Row>())
+        {
+            if (row.RowIndex is not null)
+            {
+                count += (int)row.RowIndex.Value;
+            }
+
+            foreach (var cell in row.Elements<Cell>())
+            {
+                if (cell.CellReference?.Value is not null)
+                {
+                    count++;
+                }
+
+                if (cell.DataType is not null && cell.DataType.Value == CellValues.SharedString)
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Loads the worksheet and saves it without reading any typed attribute value.
+    /// </summary>
+    [Benchmark]
+    public long RoundTrip()
+    {
+        using var stream = CreateEditableStream();
+
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheetPart = GetWorksheetPart(document);
+            worksheetPart.Worksheet.Save();
+        }
+
+        return stream.Length;
+    }
+
+    /// <summary>
     /// Streams the worksheet into a new part, inserting the data validation, without building a DOM.
     /// </summary>
     [Benchmark]

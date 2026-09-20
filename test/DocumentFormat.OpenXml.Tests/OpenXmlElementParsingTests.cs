@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using DocumentFormat.OpenXml.Presentation;
+using System.Linq;
 using Xunit;
 
 namespace DocumentFormat.OpenXml.Tests
@@ -51,6 +52,50 @@ namespace DocumentFormat.OpenXml.Tests
 
             Assert.Null(cell.CellReference);
             Assert.True(cell.HasAttributeStorage);
+        }
+
+        [Fact]
+        public void ParsedAttributesKeepTheirTextUntilTheValueIsRead()
+        {
+            const string OuterXml = "<x:c xmlns:x=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" r=\"A1\"><x:v>3</x:v></x:c>";
+
+            var cell = new Spreadsheet.Cell(OuterXml);
+            var entry = cell.ParsedState.Attributes.GetProperty(nameof(Spreadsheet.Cell.CellReference));
+
+            Assert.True(entry.HasValue);
+            Assert.Equal("A1", entry.InnerText);
+            Assert.IsType<string>(entry.RawValue);
+
+            // Reading the value creates it, and every later read returns that same instance so it can be modified in place
+            var reference = cell.CellReference;
+
+            Assert.Equal("A1", reference!.Value);
+            Assert.IsType<StringValue>(entry.RawValue);
+            Assert.Same(reference, cell.CellReference);
+
+            reference.Value = "B2";
+
+            Assert.Equal("B2", cell.CellReference!.Value);
+            Assert.Equal("B2", entry.InnerText);
+        }
+
+        [Fact]
+        public void CloningDoesNotCreateAttributeStorageForUnsetAttributes()
+        {
+            // An element can have attributes without any of the fixed ones being set, and cloning it should not
+            // create storage the clone will never use (see #1511)
+            const string OuterXml = "<x:c xmlns:x=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:foo=\"urn:foo\" foo:bar=\"1\"><x:v>3</x:v></x:c>";
+
+            var cell = new Spreadsheet.Cell(OuterXml);
+
+            Assert.True(cell.HasAttributes);
+            Assert.Null(cell.CellReference);
+
+            var clone = (Spreadsheet.Cell)cell.CloneNode(true);
+
+            Assert.False(clone.HasAttributeStorage);
+            Assert.Equal("1", clone.GetAttributes().Single(a => a.LocalName == "bar").Value);
+            Assert.Equal("3", clone.CellValue!.Text);
         }
 
         [Fact]
