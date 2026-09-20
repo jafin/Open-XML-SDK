@@ -142,7 +142,7 @@ namespace DocumentFormat.OpenXml
 
         private protected override void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode, OpenXmlElementContext? context)
         {
-            LoadAttributes(xmlReader);
+            LoadAttributes(xmlReader, context);
 
             if (!xmlReader.IsEmptyElement)
             { // only when element is not empty (not  <element />).
@@ -190,7 +190,7 @@ namespace DocumentFormat.OpenXml
                             Debug.Assert(xmlReader.NodeType != XmlNodeType.EntityReference);
 
                             // Load unexpected children if there are any.
-                            OpenXmlElement child = ElementFactory(xmlReader, context);
+                            OpenXmlElement child = ElementFactory(xmlReader);
                             child.Load(xmlReader, OpenXmlLoadMode.Full, context);
                             unwanted++;
 

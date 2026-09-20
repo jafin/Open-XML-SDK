@@ -630,7 +630,7 @@ namespace DocumentFormat.OpenXml
         /// <param name="context">The context of the element being loaded, which is resolved once per parse rather than per element.</param>
         private protected override void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode, OpenXmlElementContext? context)
         {
-            LoadAttributes(xmlReader);
+            LoadAttributes(xmlReader, context);
 
             if (!xmlReader.IsEmptyElement)
             {
@@ -651,10 +651,16 @@ namespace DocumentFormat.OpenXml
                         break;
                     }
 
-                    OpenXmlElement element = ElementFactory(xmlReader, context);
+                    OpenXmlElement element = ElementFactory(xmlReader);
 
                     // set parent before Load( ) call. AlternateContentChoice need parent info on loading.
                     element.Parent = this;
+
+                    // Seed after attaching, as resolving metadata looks up the namespace resolver through the part
+                    if (context is not null)
+                    {
+                        element.SeedMetadata(context.MetadataFactory);
+                    }
 
                     bool isACB = element is AlternateContent;
                     if (isACB && context is not null)
@@ -756,7 +762,8 @@ namespace DocumentFormat.OpenXml
                                     break;
                                 }
 
-                                var effectiveNode = OpenXmlElementContext?.MCContext.GetContentFromACBlock(acb, OpenXmlElementContext.MCSettings.TargetFileFormatVersions);
+                                // The action is only ACBlock when there is a context, which is the one it was computed from
+                                var effectiveNode = context!.MCContext.GetContentFromACBlock(acb, context.MCSettings.TargetFileFormatVersions);
                                 if (effectiveNode is null)
                                 {
                                     break;

@@ -1520,7 +1520,7 @@ namespace DocumentFormat.OpenXml
             return false;
         }
 
-        internal virtual void LoadAttributes(XmlReader xmlReader)
+        internal virtual void LoadAttributes(XmlReader xmlReader, OpenXmlElementContext? context)
         {
             Debug.Assert(xmlReader.NodeType == XmlNodeType.Element);
 
@@ -1571,7 +1571,7 @@ namespace DocumentFormat.OpenXml
                     }
                 }
 
-                RemoveAttributesBasedonMC();
+                RemoveAttributesBasedonMC(context);
 
                 // Moves the reader back to the element node.
                 xmlReader.MoveToElement();
@@ -1795,21 +1795,22 @@ namespace DocumentFormat.OpenXml
             }
         }
 
-        internal OpenXmlElement ElementFactory(XmlReader xmlReader, OpenXmlElementContext? context)
+        internal OpenXmlElement ElementFactory(XmlReader xmlReader)
             => xmlReader.NodeType switch
             {
-                XmlNodeType.Element => CreateElement(new(xmlReader.NamespaceURI, xmlReader.LocalName), xmlReader.Prefix, (xmlReader as XmlConvertingReader)?.NamespaceResolver, context),
+                XmlNodeType.Element => CreateElement(new(xmlReader.NamespaceURI, xmlReader.LocalName), xmlReader.Prefix, (xmlReader as XmlConvertingReader)?.NamespaceResolver),
                 XmlNodeType.Comment or XmlNodeType.ProcessingInstruction or XmlNodeType.XmlDeclaration => new OpenXmlMiscNode(xmlReader.NodeType),
                 XmlNodeType.Text or XmlNodeType.CDATA or XmlNodeType.SignificantWhitespace or XmlNodeType.Whitespace => new OpenXmlMiscNode(xmlReader.NodeType),
                 _ => throw new InvalidOperationException(),
             };
 
         internal OpenXmlElement CreateElement(in OpenXmlQualifiedName qname, string prefix)
-            => CreateElement(qname, prefix, null, null);
+            => CreateElement(qname, prefix, null);
 
         /// <summary>
         /// Stores the metadata for this element, so that it does not have to be resolved from the element, which walks
-        /// up to the part root.
+        /// up to the part root. The element must already be attached to its parent, as resolving metadata looks up the
+        /// namespace resolver through the part and the result is cached for the type.
         /// </summary>
         internal void SeedMetadata(IElementMetadataFactoryFeature factory)
             => _metadata ??= factory.GetMetadata(this);
@@ -1818,7 +1819,7 @@ namespace DocumentFormat.OpenXml
         /// Creates a child element, using the supplied namespace resolver if there is one. This is called for every
         /// element while parsing, and resolving the namespace resolver from the element walks up to the part root.
         /// </summary>
-        private OpenXmlElement CreateElement(in OpenXmlQualifiedName qname, string prefix, IOpenXmlNamespaceResolver? resolver, OpenXmlElementContext? context)
+        private OpenXmlElement CreateElement(in OpenXmlQualifiedName qname, string prefix, IOpenXmlNamespaceResolver? resolver)
         {
             var newElement = default(OpenXmlElement);
 
@@ -1836,11 +1837,6 @@ namespace DocumentFormat.OpenXml
             if (newElement is null)
             {
                 newElement = new OpenXmlUnknownElement(qname, prefix);
-            }
-
-            if (context is not null)
-            {
-                newElement.SeedMetadata(context.MetadataFactory);
             }
 
             return newElement;
@@ -2463,24 +2459,24 @@ namespace DocumentFormat.OpenXml
             return ret;
         }
 
-        internal void RemoveAttributesBasedonMC()
+        internal void RemoveAttributesBasedonMC(OpenXmlElementContext? context)
         {
-            if (OpenXmlElementContext is null ||
-                OpenXmlElementContext.MCSettings.ProcessMode == MarkupCompatibilityProcessMode.NoProcess)
+            if (context is null ||
+                context.MCSettings.ProcessMode == MarkupCompatibilityProcessMode.NoProcess)
             {
                 return;
             }
 
-            if (!OpenXmlElementContext.MCContext.HasIgnorable())
+            if (!context.MCContext.HasIgnorable())
             {
                 return;
             }
 
-            foreach (var attribute in RawState.Attributes)
+            foreach (var attribute in StoredAttributes)
             {
                 if (attribute.HasValue)
                 {
-                    var action = OpenXmlElementContext.MCContext.GetAttributeAction(attribute.Property.QName, OpenXmlElementContext.MCSettings.TargetFileFormatVersions);
+                    var action = context.MCContext.GetAttributeAction(attribute.Property.QName, context.MCSettings.TargetFileFormatVersions);
 
                     if (action == AttributeAction.Ignore)
                     {
@@ -2495,7 +2491,7 @@ namespace DocumentFormat.OpenXml
 
                 foreach (var attribute in ExtendedAttributesField)
                 {
-                    var action = OpenXmlElementContext.MCContext.GetAttributeAction(attribute.QName, OpenXmlElementContext.MCSettings.TargetFileFormatVersions);
+                    var action = context.MCContext.GetAttributeAction(attribute.QName, context.MCSettings.TargetFileFormatVersions);
                     if (action == AttributeAction.Ignore)
                     {
                         tobeRemoved.Add(attribute);

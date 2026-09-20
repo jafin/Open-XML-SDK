@@ -328,7 +328,7 @@ namespace DocumentFormat.OpenXml
         }
 
         /// <inheritdoc/>
-        internal override void LoadAttributes(XmlReader xmlReader)
+        internal override void LoadAttributes(XmlReader xmlReader, OpenXmlElementContext? context)
         {
         }
 
