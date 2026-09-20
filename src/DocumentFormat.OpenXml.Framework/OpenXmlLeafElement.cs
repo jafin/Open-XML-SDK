@@ -72,7 +72,7 @@ namespace DocumentFormat.OpenXml
             // TODO: should we clear the this.LoadedInnerXml?
         }
 
-        private protected override void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode)
+        private protected override void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode, OpenXmlElementContext? context)
         {
             // BUGBUG! following Read() move the cursor to next node, and skip the attributes of the first node
             // xmlReader.Read(); // read this element

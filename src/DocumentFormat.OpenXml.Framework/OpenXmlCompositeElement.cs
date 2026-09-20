@@ -627,15 +627,13 @@ namespace DocumentFormat.OpenXml
         /// </summary>
         /// <param name="xmlReader">The XmlReader to read the XML content.</param>
         /// <param name="loadMode">Specifies a load mode that is either lazy or full.</param>
-        private protected override void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode)
+        /// <param name="context">The context of the element being loaded, which is resolved once per parse rather than per element.</param>
+        private protected override void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode, OpenXmlElementContext? context)
         {
             LoadAttributes(xmlReader);
 
             if (!xmlReader.IsEmptyElement)
             {
-                // Resolving the context walks up to the part root, so it is resolved once for all children here
-                var context = OpenXmlElementContext;
-
                 xmlReader.Read(); // read this element
 
                 while (!xmlReader.EOF)
@@ -668,7 +666,7 @@ namespace DocumentFormat.OpenXml
                     if (!(element is OpenXmlMiscNode))
                     {
                         // push MC context based on the context of the child element to be loaded
-                        mcContextPushed = PushMcContext(xmlReader);
+                        mcContextPushed = PushMcContext(xmlReader, context);
                     }
 
                     // Process the element according to the MC behavior
@@ -678,11 +676,11 @@ namespace DocumentFormat.OpenXml
                         action = context.MCContext.GetElementAction(element, context.MCSettings.TargetFileFormatVersions);
                     }
 
-                    element.Load(xmlReader, loadMode);
+                    element.Load(xmlReader, loadMode, context);
 
                     if (mcContextPushed)
                     {
-                        PopMcContext();
+                        PopMcContext(context);
                     }
 
                     if (isACB && context is not null)
@@ -771,7 +769,7 @@ namespace DocumentFormat.OpenXml
                                     var node = effectiveNode.FirstChild;
                                     node.Remove();
                                     AddANode(node);
-                                    node.CheckMustUnderstandAttr();
+                                    node.CheckMustUnderstandAttr(context);
                                 }
 
                                 break;

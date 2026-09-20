@@ -1583,23 +1583,24 @@ namespace DocumentFormat.OpenXml
         /// This xmlReader will keeps on the element start after this method.
         /// </summary>
         /// <param name="xmlReader">This method screen all attribute from xmlReader, and then set the xmlReader back to the element start.</param>
+        /// <param name="context">The context of the element being loaded, which is resolved once per parse rather than per element.</param>
         /// <returns>Returns true if a MCAttributes is pushed.</returns>
-        private protected bool PushMcContext(XmlReader xmlReader)
+        private protected bool PushMcContext(XmlReader xmlReader, OpenXmlElementContext? context)
         {
             Debug.Assert(xmlReader.NodeType == XmlNodeType.Element);
 
-            if (OpenXmlElementContext is not null && OpenXmlElementContext.MCSettings.ProcessMode != MarkupCompatibilityProcessMode.NoProcess)
+            if (context is not null && context.MCSettings.ProcessMode != MarkupCompatibilityProcessMode.NoProcess)
             {
-                OpenXmlElementContext.MCContext.LookupNamespaceDelegate = xmlReader.LookupNamespace;
+                context.MCContext.LookupNamespaceDelegate = xmlReader.LookupNamespace;
 
                 var mcAttributes = LoadMCAttribute(xmlReader);
 
                 if (mcAttributes is not null)
                 {
-                    OpenXmlElementContext.MCContext.PushMCAttributes(mcAttributes);
-                    if (OpenXmlElementContext.ACBlockLevel == 0)
+                    context.MCContext.PushMCAttributes(mcAttributes);
+                    if (context.ACBlockLevel == 0)
                     {
-                        CheckMustUnderstandAttr(xmlReader, mcAttributes, OpenXmlElementContext.MCSettings);
+                        CheckMustUnderstandAttr(xmlReader, mcAttributes, context.MCSettings);
                     }
 
                     return true;
@@ -1613,11 +1614,11 @@ namespace DocumentFormat.OpenXml
             return false;
         }
 
-        private protected void PopMcContext()
+        private protected static void PopMcContext(OpenXmlElementContext? context)
         {
-            if (OpenXmlElementContext is not null && OpenXmlElementContext.MCSettings.ProcessMode != MarkupCompatibilityProcessMode.NoProcess)
+            if (context is not null && context.MCSettings.ProcessMode != MarkupCompatibilityProcessMode.NoProcess)
             {
-                OpenXmlElementContext.MCContext.PopMCAttributes();
+                context.MCContext.PopMCAttributes();
             }
             else
             {
@@ -1664,9 +1665,9 @@ namespace DocumentFormat.OpenXml
         /// <summary>
         /// If this is a node in ACB, check <c>mustunderstand</c> after load
         /// </summary>
-        internal void CheckMustUnderstandAttr()
+        internal void CheckMustUnderstandAttr(OpenXmlElementContext? context)
         {
-            if (MCAttributes is null || OpenXmlElementContext is null || OpenXmlElementContext.MCSettings.ProcessMode == MarkupCompatibilityProcessMode.NoProcess)
+            if (MCAttributes is null || context is null || context.MCSettings.ProcessMode == MarkupCompatibilityProcessMode.NoProcess)
             {
                 return;
             }
@@ -1687,7 +1688,7 @@ namespace DocumentFormat.OpenXml
 
                     var ns = new OpenXmlNamespace(uri);
 
-                    if (resolver.HasVersion(ns, OpenXmlElementContext.MCSettings.TargetFileFormatVersions))
+                    if (resolver.HasVersion(ns, context.MCSettings.TargetFileFormatVersions))
                     {
                         continue;
                     }
@@ -1698,26 +1699,26 @@ namespace DocumentFormat.OpenXml
 
             foreach (var child in ChildElements)
             {
-                child.CheckMustUnderstandAttr();
+                child.CheckMustUnderstandAttr(context);
             }
         }
 
-        internal void Load(XmlReader xmlReader, OpenXmlLoadMode loadMode)
+        internal void Load(XmlReader xmlReader, OpenXmlLoadMode loadMode, OpenXmlElementContext? context)
         {
             switch (loadMode)
             {
                 case OpenXmlLoadMode.Full:
-                    Populate(xmlReader, loadMode);
+                    Populate(xmlReader, loadMode, context);
                     break;
 
                 case OpenXmlLoadMode.Lazy:
-                    if (OpenXmlElementContext is not null && xmlReader.Depth < OpenXmlElementContext.LazySteps)
+                    if (context is not null && xmlReader.Depth < OpenXmlElementContext.LazySteps)
                     {
-                        Populate(xmlReader, loadMode);
+                        Populate(xmlReader, loadMode, context);
                     }
                     else
                     {
-                        LazyLoad(xmlReader);
+                        LazyLoad(xmlReader, context);
                     }
 
                     break;
@@ -1737,9 +1738,9 @@ namespace DocumentFormat.OpenXml
             RawOuterXml = string.Empty;
         }
 
-        private protected virtual void LazyLoad(XmlReader xmlReader) => RawOuterXml = xmlReader.ReadOuterXml();
+        private protected virtual void LazyLoad(XmlReader xmlReader, OpenXmlElementContext? context) => RawOuterXml = xmlReader.ReadOuterXml();
 
-        private protected abstract void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode);
+        private protected abstract void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode, OpenXmlElementContext? context);
 
         private protected virtual void ParseXml()
         {
@@ -1761,7 +1762,9 @@ namespace DocumentFormat.OpenXml
                     xmlReader.Skip();
                 }
 
-                Populate(xmlReader, OpenXmlElementContext?.LoadMode ?? OpenXmlLoadMode.Full);
+                var context = OpenXmlElementContext;
+
+                Populate(xmlReader, context?.LoadMode ?? OpenXmlLoadMode.Full, context);
             }
         }
 

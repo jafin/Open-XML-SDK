@@ -168,11 +168,11 @@ namespace DocumentFormat.OpenXml
 
                 // remove all children and clear all attributes
                 OuterXml = string.Empty;
-                var mcContextPushed = PushMcContext(xmlReader);
-                Load(xmlReader, context.LoadMode);
+                var mcContextPushed = PushMcContext(xmlReader, context);
+                Load(xmlReader, context.LoadMode, context);
                 if (mcContextPushed)
                 {
-                    PopMcContext();
+                    PopMcContext(context);
                 }
             }
 

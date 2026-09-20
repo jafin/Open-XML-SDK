@@ -247,9 +247,9 @@ namespace DocumentFormat.OpenXml
         }
 
         /// <inheritdoc/>
-        private protected override void LazyLoad(XmlReader xmlReader)
+        private protected override void LazyLoad(XmlReader xmlReader, OpenXmlElementContext? context)
         {
-            Populate(xmlReader, OpenXmlLoadMode.Full);
+            Populate(xmlReader, OpenXmlLoadMode.Full, context);
         }
 
         /// <inheritdoc/>
@@ -333,7 +333,7 @@ namespace DocumentFormat.OpenXml
         }
 
         /// <inheritdoc/>
-        private protected override void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode)
+        private protected override void Populate(XmlReader xmlReader, OpenXmlLoadMode loadMode, OpenXmlElementContext? context)
         {
             LoadOuterXml(xmlReader);
             xmlReader.Read();
