@@ -67,7 +67,7 @@ namespace DocumentFormat.OpenXml
 
         internal bool HasFeatureCollection => _rareState?.Features is not null;
 
-        internal bool HasAttributeStorage => _state.HasAttributeData;
+        internal bool HasAttributeStorage => _attributeData is not null;
 
         private MarkupCompatibilityAttributes? McAttributesFiled
         {
@@ -148,7 +148,12 @@ namespace DocumentFormat.OpenXml
             }
         }
 
-        private Framework.Metadata.ElementState _state;
+        // The metadata and the attribute values are held in two fields rather than in a single ElementState field so
+        // that each is published on its own. A struct holding both cannot be assigned atomically, so storing one of
+        // them would otherwise be able to discard the other or to be read half written. They are created at different
+        // times, as an element needs its metadata to create its children whether or not it has any attributes.
+        private IElementMetadata? _metadata;
+        private OpenXmlSimpleType?[]? _attributeData;
 
         /// <summary>
         /// Gets an array of fixed attributes (attributes that are defined in the schema) without forcing any parsing of the element.
@@ -158,35 +163,20 @@ namespace DocumentFormat.OpenXml
         {
             get
             {
-                if (!_state.HasAttributeData)
-                {
-                    _state = new Framework.Metadata.ElementState(Metadata);
-                }
+                var metadata = Metadata;
 
-                return _state;
+                return new Framework.Metadata.ElementState(metadata, _attributeData ??= AttributeCollection.CreateData(metadata.Attributes));
             }
         }
 
-        internal IElementMetadata Metadata
-        {
-            get
-            {
-                if (_state.IsEmpty)
-                {
-                    var metadata = CreateMetadata();
+        /// <summary>
+        /// Gets the attribute values that are already stored, without creating storage for them. This is empty until
+        /// something has asked for the attributes through <see cref="RawState"/> or <see cref="ParsedState"/>.
+        /// </summary>
+        private AttributeCollection StoredAttributes
+            => _attributeData is null ? default : new AttributeCollection(Metadata.Attributes, _attributeData);
 
-                    // Another thread may have created the state, along with its attributes, while the metadata was resolved
-                    if (_state.IsEmpty)
-                    {
-                        _state = Framework.Metadata.ElementState.MetadataOnly(metadata);
-                    }
-
-                    return metadata;
-                }
-
-                return _state.Metadata;
-            }
-        }
+        internal IElementMetadata Metadata => _metadata ??= CreateMetadata();
 
         /// <summary>
         /// Resolves the metadata without creating a feature collection if one does not exist, as that is a
@@ -452,12 +442,9 @@ namespace DocumentFormat.OpenXml
                     NamespaceDeclField = null;
                     ExtendedAttributesField = null;
 
-                    if (_state.HasAttributeData)
+                    foreach (var attribute in StoredAttributes)
                     {
-                        foreach (var attribute in _state.Attributes)
-                        {
-                            attribute.Value = null;
-                        }
+                        attribute.Value = null;
                     }
 
                     MCAttributes = null;
@@ -2665,7 +2652,12 @@ namespace DocumentFormat.OpenXml
 
             public int Revision => GetPartFeatures()?.Revision ?? 0;
 
-            public virtual IFeatureCollection Default => FeatureCollection.Default;
+            /// <summary>
+            /// Gets the features an element falls back to. This is the only definition of them, so that the instance
+            /// and the static paths cannot resolve a feature against different defaults; <see cref="GetInherited{TFeature}(OpenXmlElement)"/>
+            /// serves elements that have no feature collection and so has no instance to ask.
+            /// </summary>
+            private static IFeatureCollection Default => FeatureCollection.Default;
 
             public object? this[Type key]
             {
@@ -2697,7 +2689,7 @@ namespace DocumentFormat.OpenXml
             /// Gets a feature the way an element's feature collection would for anything other than its own features.
             /// </summary>
             internal static TFeature GetInherited<TFeature>(OpenXmlElement owner)
-                => GetInherited(owner, typeof(TFeature), FeatureCollection.Default) is TFeature feature
+                => GetInherited(owner, typeof(TFeature), Default) is TFeature feature
                     ? feature
                     : throw new NotSupportedException(SR.Format(ExceptionMessages.FeatureNotRegistered, typeof(TFeature).FullName));
 
