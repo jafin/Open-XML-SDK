@@ -651,7 +651,7 @@ namespace DocumentFormat.OpenXml
                         break;
                     }
 
-                    OpenXmlElement element = ElementFactory(xmlReader);
+                    OpenXmlElement element = ElementFactory(xmlReader, context);
 
                     // set parent before Load( ) call. AlternateContentChoice need parent info on loading.
                     element.Parent = this;

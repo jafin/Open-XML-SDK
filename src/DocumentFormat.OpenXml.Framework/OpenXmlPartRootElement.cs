@@ -71,7 +71,7 @@ namespace DocumentFormat.OpenXml
         /// <summary>
         /// Gets the OpenXmlElementContext.
         /// </summary>
-        internal override OpenXmlElementContext RootElementContext => _context ??= new(Features.GetNamespaceResolver());
+        internal override OpenXmlElementContext RootElementContext => _context ??= new(Features.GetNamespaceResolver(), Features.GetRequired<IElementMetadataFactoryFeature>());
 
         /// <summary>
         /// Load the DOM tree from the Open XML part.

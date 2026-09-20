@@ -1795,23 +1795,30 @@ namespace DocumentFormat.OpenXml
             }
         }
 
-        internal OpenXmlElement ElementFactory(XmlReader xmlReader)
+        internal OpenXmlElement ElementFactory(XmlReader xmlReader, OpenXmlElementContext? context)
             => xmlReader.NodeType switch
             {
-                XmlNodeType.Element => CreateElement(new(xmlReader.NamespaceURI, xmlReader.LocalName), xmlReader.Prefix, (xmlReader as XmlConvertingReader)?.NamespaceResolver),
+                XmlNodeType.Element => CreateElement(new(xmlReader.NamespaceURI, xmlReader.LocalName), xmlReader.Prefix, (xmlReader as XmlConvertingReader)?.NamespaceResolver, context),
                 XmlNodeType.Comment or XmlNodeType.ProcessingInstruction or XmlNodeType.XmlDeclaration => new OpenXmlMiscNode(xmlReader.NodeType),
                 XmlNodeType.Text or XmlNodeType.CDATA or XmlNodeType.SignificantWhitespace or XmlNodeType.Whitespace => new OpenXmlMiscNode(xmlReader.NodeType),
                 _ => throw new InvalidOperationException(),
             };
 
         internal OpenXmlElement CreateElement(in OpenXmlQualifiedName qname, string prefix)
-            => CreateElement(qname, prefix, null);
+            => CreateElement(qname, prefix, null, null);
+
+        /// <summary>
+        /// Stores the metadata for this element, so that it does not have to be resolved from the element, which walks
+        /// up to the part root.
+        /// </summary>
+        internal void SeedMetadata(IElementMetadataFactoryFeature factory)
+            => _metadata ??= factory.GetMetadata(this);
 
         /// <summary>
         /// Creates a child element, using the supplied namespace resolver if there is one. This is called for every
         /// element while parsing, and resolving the namespace resolver from the element walks up to the part root.
         /// </summary>
-        private OpenXmlElement CreateElement(in OpenXmlQualifiedName qname, string prefix, IOpenXmlNamespaceResolver? resolver)
+        private OpenXmlElement CreateElement(in OpenXmlQualifiedName qname, string prefix, IOpenXmlNamespaceResolver? resolver, OpenXmlElementContext? context)
         {
             var newElement = default(OpenXmlElement);
 
@@ -1829,6 +1836,11 @@ namespace DocumentFormat.OpenXml
             if (newElement is null)
             {
                 newElement = new OpenXmlUnknownElement(qname, prefix);
+            }
+
+            if (context is not null)
+            {
+                newElement.SeedMetadata(context.MetadataFactory);
             }
 
             return newElement;

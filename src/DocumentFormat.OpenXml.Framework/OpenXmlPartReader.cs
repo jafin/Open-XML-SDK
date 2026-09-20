@@ -878,7 +878,7 @@ namespace DocumentFormat.OpenXml
                 }
             }
 
-            return element.ElementFactory(_xmlReader);
+            return element.ElementFactory(_xmlReader, context: null);
         }
 
         private void ThrowIfNull()

@@ -190,7 +190,7 @@ namespace DocumentFormat.OpenXml
                             Debug.Assert(xmlReader.NodeType != XmlNodeType.EntityReference);
 
                             // Load unexpected children if there are any.
-                            OpenXmlElement child = ElementFactory(xmlReader);
+                            OpenXmlElement child = ElementFactory(xmlReader, context);
                             child.Load(xmlReader, OpenXmlLoadMode.Full, context);
                             unwanted++;
 
