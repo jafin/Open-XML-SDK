@@ -633,6 +633,9 @@ namespace DocumentFormat.OpenXml
 
             if (!xmlReader.IsEmptyElement)
             {
+                // Resolving the context walks up to the part root, so it is resolved once for all children here
+                var context = OpenXmlElementContext;
+
                 xmlReader.Read(); // read this element
 
                 while (!xmlReader.EOF)
@@ -656,9 +659,9 @@ namespace DocumentFormat.OpenXml
                     element.Parent = this;
 
                     bool isACB = element is AlternateContent;
-                    if (isACB && element.OpenXmlElementContext is not null)
+                    if (isACB && context is not null)
                     {
-                        element.OpenXmlElementContext.ACBlockLevel++;
+                        context.ACBlockLevel++;
                     }
 
                     bool mcContextPushed = false;
@@ -670,9 +673,9 @@ namespace DocumentFormat.OpenXml
 
                     // Process the element according to the MC behavior
                     var action = ElementAction.Normal;
-                    if (OpenXmlElementContext is not null && OpenXmlElementContext.MCSettings.ProcessMode != DocumentFormat.OpenXml.Packaging.MarkupCompatibilityProcessMode.NoProcess)
+                    if (context is not null && context.MCSettings.ProcessMode != DocumentFormat.OpenXml.Packaging.MarkupCompatibilityProcessMode.NoProcess)
                     {
-                        action = OpenXmlElementContext.MCContext.GetElementAction(element, OpenXmlElementContext.MCSettings.TargetFileFormatVersions);
+                        action = context.MCContext.GetElementAction(element, context.MCSettings.TargetFileFormatVersions);
                     }
 
                     element.Load(xmlReader, loadMode);
@@ -682,9 +685,9 @@ namespace DocumentFormat.OpenXml
                         PopMcContext();
                     }
 
-                    if (isACB && element.OpenXmlElementContext is not null)
+                    if (isACB && context is not null)
                     {
-                        element.OpenXmlElementContext.ACBlockLevel--;
+                        context.ACBlockLevel--;
                     }
 
                     switch (action)
