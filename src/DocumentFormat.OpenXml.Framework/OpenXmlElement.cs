@@ -1482,7 +1482,7 @@ namespace DocumentFormat.OpenXml
 
                 // the ancestors are not written to xmlWriter when only this subtree is written (i.e. OuterXml), so
                 // check whether the tree puts this node in the default namespace
-                if (canUseDefault && Parent is not null && LookupElementPrefix(namespaceUri) == string.Empty)
+                if (canUseDefault && Parent is not null && LookupElementPrefix(namespaceUri) is { Length: 0 })
                 {
                     return string.Empty;
                 }

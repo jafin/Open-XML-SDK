@@ -64,7 +64,7 @@ namespace DocumentFormat.OpenXml.Tests
             Assert.Equal($@"<worksheet xmlns:x=""{SpreadsheetNs}"" xmlns=""{SpreadsheetNs}""><sheetData /></worksheet>", xml);
         }
 
-        private static string RoundTrip(string worksheetXml, XmlNamespacePrefixSettings? settings)
+        private static string RoundTrip(string worksheetXml, XmlNamespacePrefixSettings settings)
         {
             using var stream = new MemoryStream();
 

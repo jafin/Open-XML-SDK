@@ -330,14 +330,7 @@ namespace DocumentFormat.OpenXml
         /// Gets a value indicating whether the <see cref="IXmlNamespacePrefixFeature"/> in effect writes this root's namespace as the default namespace.
         /// </summary>
         internal bool UsesConfiguredDefaultNamespace()
-        {
-            if (Features.Get<IXmlNamespacePrefixFeature>() is not { } feature)
-            {
-                return false;
-            }
-
-            return feature.TryGetPrefix(NamespaceUri, out var prefix) ? prefix.Length == 0 : feature.UseDefaultNamespaceForRoot;
-        }
+            => Features.Get<IXmlNamespacePrefixFeature>().IsDefaultNamespaceForRoot(NamespaceUri);
 
         private protected override bool ShouldWriteNamespaceDeclaration(string prefix, string uri)
             => prefix.Length != 0 || uri == NamespaceUri || !UsesConfiguredDefaultNamespace();

@@ -11,6 +11,7 @@ namespace DocumentFormat.OpenXml
     internal class XmlDOMTextWriter : XmlWriter
     {
         private readonly XmlWriter _writer;
+        private readonly bool _ownsWriter = true;
 
         // XmlWriter.LookupPrefix prefers a prefixed binding over the default namespace when both map to the same
         // uri, so track the default namespace in scope ourselves to allow elements to be written without a prefix.
@@ -37,6 +38,17 @@ namespace DocumentFormat.OpenXml
             };
 
             _writer = Create(w, xwSettings);
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="XmlDOMTextWriter"/> class that writes to an existing writer, which it
+        /// does not close, starting inside an element whose default namespace is <paramref name="defaultNamespace"/>.
+        /// </summary>
+        public XmlDOMTextWriter(XmlWriter writer, string defaultNamespace)
+        {
+            _writer = writer;
+            _ownsWriter = false;
+            _defaultNamespaces.Push(defaultNamespace);
         }
 
         /// <summary>
@@ -187,13 +199,19 @@ namespace DocumentFormat.OpenXml
 
         public override XmlSpace XmlSpace => _writer.XmlSpace;
 
-        public override void Close() => _writer.Close();
+        public override void Close()
+        {
+            if (_ownsWriter)
+            {
+                _writer.Close();
+            }
+        }
 
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
 
-            if (disposing)
+            if (disposing && _ownsWriter)
             {
 #if NET35 || NET40
                 ((IDisposable)_writer).Dispose();

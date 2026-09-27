@@ -15,3 +15,5 @@ DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings.UseDefaultNamespaceF
 DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings.XmlNamespacePrefixSettings() -> void
 static DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixExtensions.UseDefaultNamespaceForRoot<TContainer>(this TContainer! container) -> TContainer!
 static DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixExtensions.UseNamespacePrefixes<TContainer>(this TContainer! container, DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings! settings) -> TContainer!
+DocumentFormat.OpenXml.OpenXmlPartWriterSettings.NamespacePrefixes.get -> DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings?
+DocumentFormat.OpenXml.OpenXmlPartWriterSettings.NamespacePrefixes.set -> void

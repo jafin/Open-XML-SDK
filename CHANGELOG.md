@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added opt-in namespace prefix configuration so part XML can be written with the root's namespace as the default namespace (`xmlns="..."`), as Office applications do, via `OpenSettings.NamespacePrefixes`, `OpenXmlPartWriterSettings.NamespacePrefixes`, the `UseDefaultNamespaceForRoot()`/`UseNamespacePrefixes()` extensions and `IXmlNamespacePrefixFeature`. Loaded default namespace declarations can optionally be preserved with `PreserveLoadedDefaultNamespace`.
+- `OpenXmlElement.AddNamespaceDeclaration`/`RemoveNamespaceDeclaration` now accept an empty prefix to declare or remove the default namespace.
+
+### Fixed
+
+- A part root element now uses the prefix it declares for its own namespace instead of always using the built-in prefix.
+
 ## [3.4.1] - 2026-01-06
 
 ### Added
