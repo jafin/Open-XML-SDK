@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Xml;
 
@@ -10,6 +11,11 @@ namespace DocumentFormat.OpenXml
     internal class XmlDOMTextWriter : XmlWriter
     {
         private readonly XmlWriter _writer;
+
+        // XmlWriter.LookupPrefix prefers a prefixed binding over the default namespace when both map to the same
+        // uri, so track the default namespace in scope ourselves to allow elements to be written without a prefix.
+        private readonly Stack<string> _defaultNamespaces = new();
+        private string? _pendingDefaultNamespace;
 
         public XmlDOMTextWriter(Stream stream)
         {
@@ -33,6 +39,11 @@ namespace DocumentFormat.OpenXml
             _writer = Create(w, xwSettings);
         }
 
+        /// <summary>
+        /// Gets the default namespace in scope for the element currently being written.
+        /// </summary>
+        internal string DefaultNamespace => _defaultNamespaces.Count == 0 ? string.Empty : _defaultNamespaces.Peek();
+
         public override WriteState WriteState => _writer.WriteState;
 
         public override void Flush() => _writer.Flush();
@@ -51,15 +62,41 @@ namespace DocumentFormat.OpenXml
 
         public override void WriteDocType(string name, string? pubid, string? sysid, string? subset) => _writer.WriteDocType(name, pubid, sysid, subset);
 
-        public override void WriteEndAttribute() => _writer.WriteEndAttribute();
+        public override void WriteEndAttribute()
+        {
+            _writer.WriteEndAttribute();
+
+            if (_pendingDefaultNamespace is not null)
+            {
+                _defaultNamespaces.Pop();
+                _defaultNamespaces.Push(_pendingDefaultNamespace);
+                _pendingDefaultNamespace = null;
+            }
+        }
 
         public override void WriteEndDocument() => _writer.WriteEndDocument();
 
-        public override void WriteEndElement() => _writer.WriteEndElement();
+        public override void WriteEndElement()
+        {
+            _writer.WriteEndElement();
+            PopDefaultNamespace();
+        }
 
         public override void WriteEntityRef(string name) => _writer.WriteEntityRef(name);
 
-        public override void WriteFullEndElement() => _writer.WriteFullEndElement();
+        public override void WriteFullEndElement()
+        {
+            _writer.WriteFullEndElement();
+            PopDefaultNamespace();
+        }
+
+        private void PopDefaultNamespace()
+        {
+            if (_defaultNamespaces.Count > 0)
+            {
+                _defaultNamespaces.Pop();
+            }
+        }
 
         public override void WriteProcessingInstruction(string name, string? text) => _writer.WriteProcessingInstruction(name, text);
 
@@ -90,6 +127,11 @@ namespace DocumentFormat.OpenXml
             }
 
             _writer.WriteStartAttribute(prefix, localName, ns);
+
+            if (prefix.Length == 0 && localName == OpenXmlElementContext.XmlnsPrefix && _defaultNamespaces.Count > 0)
+            {
+                _pendingDefaultNamespace = string.Empty;
+            }
         }
 
         public override void WriteStartDocument() => _writer.WriteStartDocument();
@@ -119,6 +161,7 @@ namespace DocumentFormat.OpenXml
             }
 
             _writer.WriteStartElement(prefix, localName, ns);
+            _defaultNamespaces.Push(prefix.Length == 0 ? ns : DefaultNamespace);
         }
 
         public override void WriteString(string? text)
@@ -126,6 +169,11 @@ namespace DocumentFormat.OpenXml
             if (!string.IsNullOrEmpty(text))
             {
                 _writer.WriteString(text);
+
+                if (_pendingDefaultNamespace is not null)
+                {
+                    _pendingDefaultNamespace += text;
+                }
             }
         }
 

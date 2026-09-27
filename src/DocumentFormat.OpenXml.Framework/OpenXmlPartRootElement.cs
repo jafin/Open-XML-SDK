@@ -294,21 +294,7 @@ namespace DocumentFormat.OpenXml
 
             if (XmlParsed)
             {
-                // check the namespace mapping defined in this node first. because till now xmlWriter don't know the mapping defined in the current node.
-                var prefix = LookupPrefixLocal(NamespaceUri);
-
-                // if not defined in the current node, try the xmlWriter
-                if (Parent is not null && prefix.IsNullOrEmpty())
-                {
-                    prefix = xmlWriter.LookupPrefix(NamespaceUri);
-                }
-
-                // if xmlWriter didn't find it, it means the node is constructed by user and is not in the tree yet
-                // in this case, we use the predefined prefix
-                if (prefix.IsNullOrEmpty())
-                {
-                    prefix = Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
-                }
+                var prefix = GetPrefixForWrite(xmlWriter, useWriterScope: Parent is not null);
 
                 xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
 

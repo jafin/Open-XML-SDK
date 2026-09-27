@@ -238,7 +238,7 @@ namespace DocumentFormat.OpenXml
             {
                 foreach (var item in namespaceDeclarations)
                 {
-                    _xmlWriter.WriteAttributeString(OpenXmlElementContext.XmlnsPrefix, item.Key, OpenXmlElementContext.XmlnsUri, item.Value);
+                    _xmlWriter.WriteNamespaceDeclaration(item.Key, item.Value);
                 }
             }
 
@@ -341,7 +341,7 @@ namespace DocumentFormat.OpenXml
             {
                 foreach (var item in namespaceDeclarations)
                 {
-                    _xmlWriter.WriteAttributeString(OpenXmlElementContext.XmlnsPrefix, item.Key, OpenXmlElementContext.XmlnsUri, item.Value);
+                    _xmlWriter.WriteNamespaceDeclaration(item.Key, item.Value);
                 }
             }
 
@@ -532,7 +532,7 @@ namespace DocumentFormat.OpenXml
             {
                 foreach (var item in namespaceDeclarations)
                 {
-                    await _xmlWriter.WriteAttributeStringAsync(OpenXmlElementContext.XmlnsPrefix, item.Key, OpenXmlElementContext.XmlnsUri, item.Value).ConfigureAwait(true);
+                    await _xmlWriter.WriteNamespaceDeclarationAsync(item.Key, item.Value).ConfigureAwait(true);
                 }
             }
 
