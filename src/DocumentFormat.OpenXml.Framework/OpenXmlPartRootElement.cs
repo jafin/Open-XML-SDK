@@ -295,7 +295,7 @@ namespace DocumentFormat.OpenXml
             if (XmlParsed)
             {
                 // check the namespace mapping defined in this node first. because till now xmlWriter don't know the mapping defined in the current node.
-                var prefix = LookupNamespaceLocal(NamespaceUri);
+                var prefix = LookupPrefixLocal(NamespaceUri);
 
                 // if not defined in the current node, try the xmlWriter
                 if (Parent is not null && prefix.IsNullOrEmpty())
