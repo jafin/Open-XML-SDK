@@ -1659,15 +1659,17 @@ namespace DocumentFormat.OpenXml
                         }
                         else
                         {
-                            // don't add declaration for case like xmlns="global namespace uri"
-                            if (!string.IsNullOrEmpty(xmlReader.Prefix))
+                            var isDefaultNamespaceDeclaration = string.IsNullOrEmpty(xmlReader.Prefix);
+
+                            // don't add declaration for case like xmlns="global namespace uri", unless asked to preserve it
+                            if (!isDefaultNamespaceDeclaration || OpenXmlElementContext?.PreserveDefaultNamespaceDeclarations == true)
                             {
                                 if (NamespaceDeclField is null)
                                 {
                                     NamespaceDeclField = new List<KeyValuePair<string, string>>();
                                 }
 
-                                NamespaceDeclField.Add(new KeyValuePair<string, string>(xmlReader.LocalName, xmlReader.Value));
+                                NamespaceDeclField.Add(new KeyValuePair<string, string>(isDefaultNamespaceDeclaration ? string.Empty : xmlReader.LocalName, xmlReader.Value));
                             }
                         }
                     }

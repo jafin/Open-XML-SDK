@@ -130,6 +130,7 @@ namespace DocumentFormat.OpenXml
             using (var xmlReader = XmlConvertingReaderFactory.Create(partStream, Features.GetNamespaceResolver(), context.XmlReaderSettings, strictRelationshipFound))
             {
                 context.MCSettings = openXmlPart.MCSettings;
+                context.PreserveDefaultNamespaceDeclarations = openXmlPart.Features.Get<IXmlNamespacePrefixFeature>()?.PreserveLoadedDefaultNamespace ?? false;
 
                 xmlReader.Read();
 
