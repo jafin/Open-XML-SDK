@@ -294,12 +294,19 @@ namespace DocumentFormat.OpenXml
 
             if (XmlParsed)
             {
-                var prefix = GetPrefixForWrite(xmlWriter, useWriterScope: Parent is not null);
+                var useDefaultNamespace = UsesConfiguredDefaultNamespace();
+                var prefix = useDefaultNamespace ? string.Empty : GetPrefixForWrite(xmlWriter, useWriterScope: Parent is not null);
 
                 xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
 
                 // fix bug #225919, write out all namespace into to root
                 WriteNamespaceAtributes(xmlWriter);
+
+                if (useDefaultNamespace)
+                {
+                    WritePrefixDeclarationForAttributes(xmlWriter);
+                }
+
                 WriteAttributesTo(xmlWriter);
 
                 if (HasChildren || !string.IsNullOrEmpty(InnerText))
@@ -316,6 +323,74 @@ namespace DocumentFormat.OpenXml
             {
                 xmlWriter.WriteRaw(RawOuterXml);
             }
+        }
+
+        /// <summary>
+        /// Gets a value indicating whether the <see cref="IXmlNamespacePrefixFeature"/> in effect writes this root's namespace as the default namespace.
+        /// </summary>
+        internal bool UsesConfiguredDefaultNamespace()
+        {
+            if (Features.Get<IXmlNamespacePrefixFeature>() is not { } feature)
+            {
+                return false;
+            }
+
+            return feature.TryGetPrefix(NamespaceUri, out var prefix) ? prefix.Length == 0 : feature.UseDefaultNamespaceForRoot;
+        }
+
+        private protected override bool ShouldWriteNamespaceDeclaration(string prefix, string uri)
+            => prefix.Length != 0 || uri == NamespaceUri || !UsesConfiguredDefaultNamespace();
+
+        /// <summary>
+        /// A default namespace never applies to attributes, so when the root's namespace is written as the default namespace,
+        /// declare its built-in prefix as well if any attribute needs it. Otherwise it would be declared on every element with such an attribute.
+        /// </summary>
+        private void WritePrefixDeclarationForAttributes(XmlWriter xmlWriter)
+        {
+            var namespaceUri = NamespaceUri;
+
+            if (NamespaceDeclField is not null)
+            {
+                foreach (var item in NamespaceDeclField)
+                {
+                    if (item.Key.Length != 0 && item.Value == namespaceUri)
+                    {
+                        return;
+                    }
+                }
+            }
+
+            if (!string.IsNullOrEmpty(xmlWriter.LookupPrefix(namespaceUri)))
+            {
+                return;
+            }
+
+            var prefix = Features.GetNamespaceResolver().LookupPrefix(namespaceUri);
+
+            if (string.IsNullOrEmpty(prefix) || LookupNamespaceLocal(prefix) is not null || !HasAttributeInSubtree(namespaceUri))
+            {
+                return;
+            }
+
+            xmlWriter.WriteNamespaceDeclaration(prefix, namespaceUri);
+        }
+
+        private bool HasAttributeInSubtree(string namespaceUri)
+        {
+            if (HasAttributeInNamespace(namespaceUri))
+            {
+                return true;
+            }
+
+            foreach (var element in Descendants())
+            {
+                if (element.HasAttributeInNamespace(namespaceUri))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void WriteNamespaceAtributes(XmlWriter xmlWrite)

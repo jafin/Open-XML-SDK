@@ -37,7 +37,15 @@ namespace DocumentFormat.OpenXml.Packaging
         internal OpenSettings OpenSettings
         {
             get => _settings ??= new();
-            set => _settings = value;
+            set
+            {
+                _settings = value;
+
+                if (value?.NamespacePrefixes is { } namespacePrefixes)
+                {
+                    Features.Set<IXmlNamespacePrefixFeature>(new XmlNamespacePrefixFeature(namespacePrefixes));
+                }
+            }
         }
 
         /// <summary>

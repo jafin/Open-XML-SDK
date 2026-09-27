@@ -1,1 +1,17 @@
 ﻿#nullable enable
+DocumentFormat.OpenXml.Features.IXmlNamespacePrefixFeature
+DocumentFormat.OpenXml.Features.IXmlNamespacePrefixFeature.PreserveLoadedDefaultNamespace.get -> bool
+DocumentFormat.OpenXml.Features.IXmlNamespacePrefixFeature.TryGetPrefix(string! namespaceUri, out string! prefix) -> bool
+DocumentFormat.OpenXml.Features.IXmlNamespacePrefixFeature.UseDefaultNamespaceForRoot.get -> bool
+DocumentFormat.OpenXml.Packaging.OpenSettings.NamespacePrefixes.get -> DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings?
+DocumentFormat.OpenXml.Packaging.OpenSettings.NamespacePrefixes.set -> void
+DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixExtensions
+DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings
+DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings.PreserveLoadedDefaultNamespace.get -> bool
+DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings.PreserveLoadedDefaultNamespace.set -> void
+DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings.Prefixes.get -> System.Collections.Generic.IDictionary<string!, string!>!
+DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings.UseDefaultNamespaceForRoot.get -> bool
+DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings.UseDefaultNamespaceForRoot.set -> void
+DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings.XmlNamespacePrefixSettings() -> void
+static DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixExtensions.UseDefaultNamespaceForRoot<TContainer>(this TContainer! container) -> TContainer!
+static DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixExtensions.UseNamespacePrefixes<TContainer>(this TContainer! container, DocumentFormat.OpenXml.Packaging.XmlNamespacePrefixSettings! settings) -> TContainer!

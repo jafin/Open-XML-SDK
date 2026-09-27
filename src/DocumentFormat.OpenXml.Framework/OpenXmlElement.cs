@@ -1479,12 +1479,54 @@ namespace DocumentFormat.OpenXml
                 {
                     return prefix;
                 }
+
+                // the ancestors are not written to xmlWriter when only this subtree is written (i.e. OuterXml), so
+                // check whether the tree puts this node in the default namespace
+                if (canUseDefault && Parent is not null && LookupElementPrefix(namespaceUri) == string.Empty)
+                {
+                    return string.Empty;
+                }
             }
 
             // if xmlWriter didn't find it, it means the node is constructed by user and is not in the tree yet
             // in this case, we use the predefined prefix
             return Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
         }
+
+        /// <summary>
+        /// Gets a value indicating whether the current element has an attribute in <paramref name="namespaceUri"/>.
+        /// Elements that have not been parsed are skipped, as they are written from their original XML.
+        /// </summary>
+        internal bool HasAttributeInNamespace(string namespaceUri)
+        {
+            if (!XmlParsed)
+            {
+                return false;
+            }
+
+            if (ExtendedAttributesField is not null)
+            {
+                foreach (var attribute in ExtendedAttributesField)
+                {
+                    if (attribute.NamespaceUri == namespaceUri)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            foreach (var attribute in RawState.Attributes)
+            {
+                if (attribute.Value is not null && attribute.Property.QName.Namespace.Uri == namespaceUri)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private protected virtual bool ShouldWriteNamespaceDeclaration(string prefix, string uri) => true;
 
         private protected virtual void WriteAttributesTo(XmlWriter xmlWriter)
         {
@@ -1493,7 +1535,10 @@ namespace DocumentFormat.OpenXml
             {
                 foreach (var item in NamespaceDeclField)
                 {
-                    xmlWriter.WriteNamespaceDeclaration(item.Key, item.Value);
+                    if (ShouldWriteNamespaceDeclaration(item.Key, item.Value))
+                    {
+                        xmlWriter.WriteNamespaceDeclaration(item.Key, item.Value);
+                    }
                 }
             }
 
@@ -2557,6 +2602,17 @@ namespace DocumentFormat.OpenXml
 
             for (var node = this; node is not null; node = node.Parent)
             {
+                // a default namespace configured for the part root replaces any default namespace declared on it
+                if (!defaultRedefined && node is OpenXmlPartRootElement root && root.UsesConfiguredDefaultNamespace())
+                {
+                    if (root.NamespaceUri == uri)
+                    {
+                        return string.Empty;
+                    }
+
+                    defaultRedefined = true;
+                }
+
                 if (!defaultRedefined && node.LookupNamespaceLocal(string.Empty) is { } localDefault)
                 {
                     if (localDefault == uri)

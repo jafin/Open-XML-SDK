@@ -559,6 +559,15 @@ namespace DocumentFormat.OpenXml {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to The prefix &quot;{0}&quot; for namespace &quot;{1}&quot; is not supported. Only an empty prefix, which writes the namespace as the default namespace, is currently supported..
+        /// </summary>
+        internal static string NamespacePrefixNotSupported {
+            get {
+                return ResourceManager.GetString("NamespacePrefixNotSupported", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Non-composite elements do not have child elements..
         /// </summary>
         internal static string NonCompositeNoChild {
