@@ -59,6 +59,22 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void WriteToAnyXmlWriterUsesDefaultNamespaceForChildren()
+        {
+            var document = new Document(new Body(new Paragraph(new ParagraphProperties(new Justification { Val = JustificationValues.Center }))));
+            document.AddNamespaceDeclaration(string.Empty, WordNs);
+            document.AddNamespaceDeclaration("w", WordNs);
+
+            var sb = new StringBuilder();
+            using (var writer = System.Xml.XmlWriter.Create(sb, new System.Xml.XmlWriterSettings { OmitXmlDeclaration = true }))
+            {
+                document.WriteTo(writer);
+            }
+
+            Assert.Equal($@"<document xmlns=""{WordNs}"" xmlns:w=""{WordNs}""><body><p><pPr><jc w:val=""center"" /></pPr></p></body></document>", sb.ToString());
+        }
+
+        [Fact]
         public void PrefixIsEmptyUnderDefaultDeclaration()
         {
             var cell = new Cell();

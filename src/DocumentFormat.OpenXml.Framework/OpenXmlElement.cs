@@ -336,7 +336,7 @@ namespace DocumentFormat.OpenXml
             {
                 MakeSureParsed();
 
-                var prefix = LookupElementPrefix(NamespaceUri);
+                var prefix = LookupElementPrefix(NamespaceUri, includeConfiguredDefault: false);
 
                 if (prefix is not null)
                 {
@@ -1080,6 +1080,16 @@ namespace DocumentFormat.OpenXml
 
             if (XmlParsed)
             {
+                // other writers cannot report the default namespace in scope, which is needed to write the content without prefixes
+                if (xmlWriter is not XmlDOMTextWriter && LookupNamespaceLocal(string.Empty) is not null)
+                {
+                    var defaultNamespace = NamespaceUri.Length > 0 && xmlWriter.LookupPrefix(NamespaceUri) is { Length: 0 } ? NamespaceUri : string.Empty;
+
+                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, defaultNamespace);
+                    WriteTo(trackingWriter);
+                    return;
+                }
+
                 var prefix = GetPrefixForWrite(xmlWriter, useWriterScope: true);
 
                 xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
@@ -1482,7 +1492,7 @@ namespace DocumentFormat.OpenXml
 
                 // the ancestors are not written to xmlWriter when only this subtree is written (i.e. OuterXml), so
                 // check whether the tree puts this node in the default namespace
-                if (canUseDefault && Parent is not null && LookupElementPrefix(namespaceUri) is { Length: 0 })
+                if (canUseDefault && Parent is not null && LookupElementPrefix(namespaceUri, includeConfiguredDefault: true) is { Length: 0 })
                 {
                     return string.Empty;
                 }
@@ -2598,14 +2608,16 @@ namespace DocumentFormat.OpenXml
         /// Finds the prefix an element in <paramref name="uri"/> would use in the current element scope, where an
         /// empty string means the default namespace. Returns null if the uri is not declared in scope.
         /// </summary>
-        private string? LookupElementPrefix(string uri)
+        /// <param name="uri">The namespace uri.</param>
+        /// <param name="includeConfiguredDefault">Whether the <see cref="IXmlNamespacePrefixFeature"/> of the part root is taken into account, which only applies when writing.</param>
+        private string? LookupElementPrefix(string uri, bool includeConfiguredDefault)
         {
             var defaultRedefined = false;
 
             for (var node = this; node is not null; node = node.Parent)
             {
                 // a default namespace configured for the part root replaces any default namespace declared on it
-                if (!defaultRedefined && node is OpenXmlPartRootElement root && root.UsesConfiguredDefaultNamespace())
+                if (includeConfiguredDefault && !defaultRedefined && node is OpenXmlPartRootElement root && root.UsesConfiguredDefaultNamespace())
                 {
                     if (root.NamespaceUri == uri)
                     {
@@ -2636,13 +2648,16 @@ namespace DocumentFormat.OpenXml
             return null;
         }
 
+        /// <summary>
+        /// Finds the prefix declared on the current element for <paramref name="uri"/>. A default namespace declaration is not a prefix, so it is skipped.
+        /// </summary>
         internal string? LookupPrefixLocal(string uri)
         {
             if (NamespaceDeclField is not null)
             {
                 for (var i = 0; i < NamespaceDeclField.Count; i++)
                 {
-                    if (NamespaceDeclField[i].Value == uri)
+                    if (NamespaceDeclField[i].Value == uri && NamespaceDeclField[i].Key.Length != 0)
                     {
                         return NamespaceDeclField[i].Key;
                     }

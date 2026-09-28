@@ -165,7 +165,7 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
-        public void OuterXmlAndPrefixMatchSavedOutput()
+        public void OuterXmlMatchesSavedOutput()
         {
             using var stream = new MemoryStream();
             using var doc = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook).UseDefaultNamespaceForRoot();
@@ -174,8 +174,47 @@ namespace DocumentFormat.OpenXml.Tests
 
             Assert.Equal($@"<worksheet xmlns=""{SpreadsheetNs}""><sheetData><row><c><v>1</v></c></row></sheetData></worksheet>", worksheetPart.Worksheet.OuterXml);
             Assert.Equal($@"<c xmlns=""{SpreadsheetNs}""><v>1</v></c>", cell.OuterXml);
-            Assert.Equal(string.Empty, worksheetPart.Worksheet.Prefix);
-            Assert.Equal(string.Empty, cell.Prefix);
+        }
+
+        [Fact]
+        public void PrefixIsNotAffectedBySettings()
+        {
+            using var stream = new MemoryStream();
+            using var doc = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook).UseDefaultNamespaceForRoot();
+            var cell = new Cell(new CellValue("1"));
+            var worksheetPart = AddWorksheet(doc, new Worksheet(new SheetData(new Row(cell))));
+
+            Assert.Equal("x", worksheetPart.Worksheet.Prefix);
+            Assert.Equal("x", cell.Prefix);
+        }
+
+        [Fact]
+        public void WriteToAnyXmlWriterMatchesSavedOutput()
+        {
+            using var stream = new MemoryStream();
+            using var doc = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document).UseDefaultNamespaceForRoot();
+            var mainPart = doc.AddMainDocumentPart();
+            mainPart.Document = new W.Document(new W.Body(new W.Paragraph(new W.ParagraphProperties(new W.Justification { Val = W.JustificationValues.Center }))));
+
+            var sb = new System.Text.StringBuilder();
+            using (var writer = System.Xml.XmlWriter.Create(sb, new System.Xml.XmlWriterSettings { OmitXmlDeclaration = true }))
+            {
+                mainPart.Document.WriteTo(writer);
+            }
+
+            Assert.Equal($@"<document xmlns:w=""{WordNs}"" xmlns=""{WordNs}""><body><p><pPr><jc w:val=""center"" /></pPr></p></body></document>", sb.ToString());
+        }
+
+        [Fact]
+        public void ClonedPackageKeepsSettingsAppliedWithExtension()
+        {
+            using var stream = new MemoryStream();
+            using var doc = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook).UseDefaultNamespaceForRoot();
+            AddWorksheet(doc, new Worksheet(new SheetData())).Worksheet.Save();
+
+            using var clone = doc.Clone();
+
+            Assert.StartsWith("<worksheet ", StripDeclaration(SaveAndRead(clone.WorkbookPart!.WorksheetParts.First())));
         }
 
         [Fact]

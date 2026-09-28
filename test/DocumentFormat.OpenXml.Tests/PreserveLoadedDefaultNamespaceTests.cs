@@ -5,6 +5,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Xunit;
 
@@ -62,6 +63,37 @@ namespace DocumentFormat.OpenXml.Tests
             var xml = RoundTrip(Input, new XmlNamespacePrefixSettings { PreserveLoadedDefaultNamespace = true, UseDefaultNamespaceForRoot = true });
 
             Assert.Equal($@"<worksheet xmlns:x=""{SpreadsheetNs}"" xmlns=""{SpreadsheetNs}""><sheetData /></worksheet>", xml);
+        }
+
+        [Fact]
+        public void LookupPrefixFindsPrefixedBindingNextToPreservedDefault()
+        {
+            const string Input = $@"<worksheet xmlns=""{SpreadsheetNs}"" xmlns:x=""{SpreadsheetNs}""><sheetData /></worksheet>";
+
+            using var stream = CreatePackage(Input);
+            using var doc = SpreadsheetDocument.Open(stream, true, new OpenSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { PreserveLoadedDefaultNamespace = true } });
+            var worksheet = doc.WorkbookPart!.WorksheetParts.First().Worksheet;
+
+            Assert.Equal("x", worksheet.LookupPrefix(SpreadsheetNs));
+            Assert.Equal(SpreadsheetNs, worksheet.LookupNamespace(string.Empty));
+        }
+
+        private static MemoryStream CreatePackage(string worksheetXml)
+        {
+            var stream = new MemoryStream();
+
+            using (var doc = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook))
+            {
+                var workbookPart = doc.AddWorkbookPart();
+                workbookPart.Workbook = new Workbook(new Sheets());
+                var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
+
+                using var data = new MemoryStream(Encoding.UTF8.GetBytes(worksheetXml));
+                worksheetPart.FeedData(data);
+            }
+
+            stream.Position = 0;
+            return stream;
         }
 
         private static string RoundTrip(string worksheetXml, XmlNamespacePrefixSettings settings)

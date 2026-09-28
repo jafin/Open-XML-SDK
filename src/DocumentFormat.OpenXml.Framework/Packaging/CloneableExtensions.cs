@@ -259,6 +259,12 @@ public static class CloneableExtensions
 
             destination.OpenSettings = settings ?? new(source.OpenSettings);
 
+            // settings applied with UseNamespacePrefixes are not part of OpenSettings, so carry them over unless the settings replace them
+            if (destination.OpenSettings.NamespacePrefixes is null && source.Features.Get<IXmlNamespacePrefixFeature>() is { } namespacePrefixes)
+            {
+                destination.Features.Set<IXmlNamespacePrefixFeature>(namespacePrefixes);
+            }
+
             destination.Features.Set<IPartUriFeature>(existing);
 
             return destination;

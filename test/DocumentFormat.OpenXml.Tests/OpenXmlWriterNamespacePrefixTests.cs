@@ -113,6 +113,82 @@ namespace DocumentFormat.OpenXml.Tests
             Assert.Equal($@"<worksheet xmlns=""{SpreadsheetNs}""><sheetData><row><c><v>1</v></c></row></sheetData></worksheet>", Read(stream));
         }
 
+        [Fact]
+        public void InvalidSettingsLeavePartUntouched()
+        {
+            using var stream = new MemoryStream();
+            using var doc = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook);
+            var worksheetPart = AddWorksheetPart(doc);
+            worksheetPart.Worksheet = new Worksheet(new SheetData());
+            worksheetPart.Worksheet.Save();
+            var before = Read(worksheetPart);
+
+            var settings = new XmlNamespacePrefixSettings();
+            settings.Prefixes[SpreadsheetNs] = "ss";
+
+            Assert.Throws<ArgumentException>(() => new OpenXmlPartWriter(worksheetPart, new OpenXmlPartWriterSettings { NamespacePrefixes = settings }));
+            Assert.Equal(before, Read(worksheetPart));
+        }
+
+        [Fact]
+        public void WriteElementOfRootUsesWriterSettings()
+        {
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream, new OpenXmlPartWriterSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true } }))
+            {
+                writer.WriteElement(new Worksheet(new SheetData(new Row())));
+            }
+
+            Assert.Equal($@"<worksheet xmlns=""{SpreadsheetNs}""><sheetData><row /></sheetData></worksheet>", Read(stream));
+        }
+
+        [Fact]
+        public void WriteElementOfConfiguredRootIntoWriterWithoutSettingsIsPrefixed()
+        {
+            using var package = new MemoryStream();
+            using var doc = SpreadsheetDocument.Create(package, SpreadsheetDocumentType.Workbook).UseDefaultNamespaceForRoot();
+            var worksheetPart = AddWorksheetPart(doc);
+            worksheetPart.Worksheet = new Worksheet(new SheetData(new Row()));
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteElement(worksheetPart.Worksheet);
+            }
+
+            Assert.Equal($@"<x:worksheet xmlns:x=""{SpreadsheetNs}""><x:sheetData><x:row /></x:sheetData></x:worksheet>", Read(stream));
+        }
+
+        [Fact]
+        public void ConflictingDefaultDeclarationAttributeOnConfiguredRootIsSkipped()
+        {
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream, new OpenXmlPartWriterSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true } }))
+            {
+                writer.WriteStartElement(new Worksheet(), new[] { new OpenXmlAttribute(string.Empty, "xmlns", "http://www.w3.org/2000/xmlns/", "urn:other") });
+                writer.WriteEndElement();
+            }
+
+            Assert.Equal($@"<worksheet xmlns:x=""{SpreadsheetNs}"" xmlns=""{SpreadsheetNs}"" />", Read(stream));
+        }
+
+        [Fact]
+        public void PrefixDeclarationAttributeOnConfiguredRootIsNotDuplicated()
+        {
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream, new OpenXmlPartWriterSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true } }))
+            {
+                writer.WriteStartElement(new Worksheet(), new[] { new OpenXmlAttribute("xmlns", "x", "http://www.w3.org/2000/xmlns/", SpreadsheetNs) });
+                writer.WriteEndElement();
+            }
+
+            Assert.Equal($@"<worksheet xmlns:x=""{SpreadsheetNs}"" xmlns=""{SpreadsheetNs}"" />", Read(stream));
+        }
+
 #if FEATURE_ASYNC_SAX_XML
         [Fact]
         public async Task AsyncWriterUsesSettings()

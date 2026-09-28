@@ -56,6 +56,12 @@ namespace DocumentFormat.OpenXml
         /// </summary>
         internal string DefaultNamespace => _defaultNamespaces.Count == 0 ? string.Empty : _defaultNamespaces.Peek();
 
+        /// <summary>
+        /// Gets or sets a value that, when set, decides whether a part root element written to this writer uses the default namespace,
+        /// instead of the settings of the part the root belongs to.
+        /// </summary>
+        internal bool? UseDefaultNamespaceForRoot { get; set; }
+
         public override WriteState WriteState => _writer.WriteState;
 
         public override void Flush() => _writer.Flush();

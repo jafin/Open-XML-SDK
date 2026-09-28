@@ -83,6 +83,11 @@ namespace DocumentFormat.OpenXml
                 throw new ArgumentNullException(nameof(settings));
             }
 
+            // validate the settings before the part is truncated
+            _namespacePrefixes = settings.NamespacePrefixes is { } namespacePrefixes
+                ? new XmlNamespacePrefixFeature(namespacePrefixes)
+                : openXmlPart.Features.Get<IXmlNamespacePrefixFeature>();
+
             var partStream = openXmlPart.GetStream(FileMode.Create);
             XmlWriterSettings xmlWriterSettings = new()
             {
@@ -94,9 +99,6 @@ namespace DocumentFormat.OpenXml
             };
 
             _xmlWriter = XmlWriter.Create(partStream, xmlWriterSettings);
-            _namespacePrefixes = settings.NamespacePrefixes is { } namespacePrefixes
-                ? new XmlNamespacePrefixFeature(namespacePrefixes)
-                : openXmlPart.Features.Get<IXmlNamespacePrefixFeature>();
         }
 
         /// <summary>
@@ -151,6 +153,9 @@ namespace DocumentFormat.OpenXml
                 throw new ArgumentNullException(nameof(settings));
             }
 
+            // validate the settings before the writer takes ownership of the stream
+            _namespacePrefixes = settings.NamespacePrefixes is { } namespacePrefixes ? new XmlNamespacePrefixFeature(namespacePrefixes) : null;
+
             XmlWriterSettings xmlWriterSettings = new()
             {
                 CloseOutput = settings.CloseOutput,
@@ -161,7 +166,6 @@ namespace DocumentFormat.OpenXml
             };
 
             _xmlWriter = XmlWriter.Create(partStream, xmlWriterSettings);
-            _namespacePrefixes = settings.NamespacePrefixes is { } namespacePrefixes ? new XmlNamespacePrefixFeature(namespacePrefixes) : null;
         }
 
         #region public OpenXmlWriter methods
@@ -244,15 +248,6 @@ namespace DocumentFormat.OpenXml
 
             WriteStartTag(elementReader.Prefix, elementReader.LocalName, elementReader.NamespaceUri, attributes, namespaceDeclarations);
 
-            if (attributes is not null)
-            {
-                // write attributes
-                foreach (var attribute in attributes)
-                {
-                    _xmlWriter.WriteAttributeString(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value);
-                }
-            }
-
             if (elementReader.ElementType.IsSubclassOf(typeof(OpenXmlLeafTextElement)))
             {
                 _isLeafTextElementStart = true;
@@ -281,16 +276,7 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            WriteStartTag(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, attributes: null, namespaceDeclarations: null);
-
-            if (elementObject.HasAttributes)
-            {
-                // write attributes
-                foreach (var attribute in elementObject.GetAttributes())
-                {
-                    _xmlWriter.WriteAttributeString(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value);
-                }
-            }
+            WriteStartTag(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, elementObject.HasAttributes ? elementObject.GetAttributes() : null, namespaceDeclarations: null);
 
             if (elementObject is OpenXmlLeafTextElement)
             {
@@ -338,15 +324,6 @@ namespace DocumentFormat.OpenXml
             ThrowIfObjectDisposed();
 
             WriteStartTag(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, attributes, namespaceDeclarations);
-
-            if (attributes is not null)
-            {
-                // write attributes
-                foreach (var attribute in attributes)
-                {
-                    _xmlWriter.WriteAttributeString(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value);
-                }
-            }
 
             if (elementObject is OpenXmlLeafTextElement)
             {
@@ -404,7 +381,16 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            if (CurrentDefaultNamespace.Length > 0)
+            if (_defaultNamespaces.Count == 0 && elementObject is OpenXmlPartRootElement)
+            {
+                // this writer's settings decide whether the root is written in the default namespace, not the settings of the part the element belongs to
+                using var writer = new XmlDOMTextWriter(_xmlWriter, string.Empty)
+                {
+                    UseDefaultNamespaceForRoot = _namespacePrefixes.IsDefaultNamespaceForRoot(elementObject.NamespaceUri),
+                };
+                elementObject.WriteTo(writer);
+            }
+            else if (CurrentDefaultNamespace.Length > 0)
             {
                 // track the default namespace so the subtree is written without prefixes where possible
                 using var writer = new XmlDOMTextWriter(_xmlWriter, CurrentDefaultNamespace);
@@ -464,6 +450,17 @@ namespace DocumentFormat.OpenXml
             {
                 _xmlWriter.WriteNamespaceDeclaration(rootPrefix, namespaceUri);
             }
+
+            if (attributes is not null)
+            {
+                foreach (var attribute in attributes)
+                {
+                    if (!skipLocalDefault || !IsDefaultNamespaceDeclaration(attribute))
+                    {
+                        _xmlWriter.WriteAttributeString(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -478,7 +475,7 @@ namespace DocumentFormat.OpenXml
         private string? StartElementScope(ref string? prefix, string namespaceUri, IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations, out bool skipLocalDefault)
         {
             string? localDefault = null;
-            var hasPrefixedDeclaration = false;
+            List<KeyValuePair<string, string>>? prefixedDeclarations = null;
 
             if (namespaceDeclarations is not null)
             {
@@ -488,20 +485,25 @@ namespace DocumentFormat.OpenXml
                     {
                         localDefault = item.Value;
                     }
-                    else if (item.Value == namespaceUri)
+                    else
                     {
-                        hasPrefixedDeclaration = true;
+                        (prefixedDeclarations ??= new()).Add(item);
                     }
                 }
             }
 
+            // namespace declarations may also be passed as attributes, which is how OpenXmlPartReader reports a default namespace
             if (attributes is not null)
             {
                 foreach (var attribute in attributes)
                 {
-                    if (attribute.Prefix.Length == 0 && attribute.LocalName == OpenXmlElementContext.XmlnsPrefix)
+                    if (IsDefaultNamespaceDeclaration(attribute))
                     {
                         localDefault = attribute.Value;
+                    }
+                    else if (attribute.Prefix == OpenXmlElementContext.XmlnsPrefix)
+                    {
+                        (prefixedDeclarations ??= new()).Add(new(attribute.LocalName, attribute.Value ?? string.Empty));
                     }
                 }
             }
@@ -516,7 +518,7 @@ namespace DocumentFormat.OpenXml
                 localDefault = namespaceUri;
 
                 // the content cannot be inspected in advance, so declare the prefix in case an attribute needs it
-                if (!hasPrefixedDeclaration && Resolver.LookupPrefix(namespaceUri) is { Length: > 0 } builtInPrefix)
+                if (Resolver.LookupPrefix(namespaceUri) is { Length: > 0 } builtInPrefix && !IsDeclared(prefixedDeclarations, builtInPrefix, namespaceUri))
                 {
                     rootPrefix = builtInPrefix;
                 }
@@ -545,6 +547,28 @@ namespace DocumentFormat.OpenXml
             return rootPrefix;
         }
 
+        private static bool IsDefaultNamespaceDeclaration(OpenXmlAttribute attribute)
+            => attribute.Prefix.Length == 0 && attribute.LocalName == OpenXmlElementContext.XmlnsPrefix;
+
+        /// <summary>
+        /// Gets a value indicating whether <paramref name="declarations"/> already declares <paramref name="namespaceUri"/> with a prefix, or declares <paramref name="prefix"/>.
+        /// </summary>
+        private static bool IsDeclared(List<KeyValuePair<string, string>>? declarations, string prefix, string namespaceUri)
+        {
+            if (declarations is not null)
+            {
+                foreach (var item in declarations)
+                {
+                    if (item.Key == prefix || item.Value == namespaceUri)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
 #if FEATURE_ASYNC_SAX_XML
         private async Task WriteStartTagAsync(string? prefix, string localName, string namespaceUri, IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations)
         {
@@ -566,6 +590,17 @@ namespace DocumentFormat.OpenXml
             if (rootPrefix is not null)
             {
                 await _xmlWriter.WriteNamespaceDeclarationAsync(rootPrefix, namespaceUri).ConfigureAwait(true);
+            }
+
+            if (attributes is not null)
+            {
+                foreach (var attribute in attributes)
+                {
+                    if (!skipLocalDefault || !IsDefaultNamespaceDeclaration(attribute))
+                    {
+                        await _xmlWriter.WriteAttributeStringAsync(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value).ConfigureAwait(true);
+                    }
+                }
             }
         }
 #endif
@@ -613,16 +648,7 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            await WriteStartTagAsync(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, attributes: null, namespaceDeclarations: null).ConfigureAwait(true);
-
-            if (elementObject.HasAttributes)
-            {
-                // write attributes
-                foreach (var attribute in elementObject.GetAttributes())
-                {
-                    await _xmlWriter.WriteAttributeStringAsync(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value).ConfigureAwait(true);
-                }
-            }
+            await WriteStartTagAsync(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, elementObject.HasAttributes ? elementObject.GetAttributes() : null, namespaceDeclarations: null).ConfigureAwait(true);
 
             if (elementObject is OpenXmlLeafTextElement)
             {
@@ -670,15 +696,6 @@ namespace DocumentFormat.OpenXml
             ThrowIfObjectDisposed();
 
             await WriteStartTagAsync(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, attributes, namespaceDeclarations).ConfigureAwait(true);
-
-            if (attributes is not null)
-            {
-                // write attributes
-                foreach (var attribute in attributes)
-                {
-                    await _xmlWriter.WriteAttributeStringAsync(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value).ConfigureAwait(true);
-                }
-            }
 
             if (elementObject is OpenXmlLeafTextElement)
             {
