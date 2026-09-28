@@ -257,10 +257,17 @@ public static class CloneableExtensions
                 destination.AddPart(part.OpenXmlPart, part.RelationshipId);
             }
 
+            // namespace prefix settings given for the clone win; otherwise the source's current settings carry over, including
+            // ones applied with UseNamespacePrefixes after it was opened, which are not part of its OpenSettings. Clone overloads
+            // without settings pass the source's own OpenSettings, which must not count as settings given for the clone.
+            var sourceNamespacePrefixes = source.Features.Get<IXmlNamespacePrefixFeature>();
+            var namespacePrefixes = ReferenceEquals(destination.OpenSettings, source.OpenSettings)
+                ? sourceNamespacePrefixes
+                : destination.Features.Get<IXmlNamespacePrefixFeature>() ?? sourceNamespacePrefixes;
+
             destination.OpenSettings = settings ?? new(source.OpenSettings);
 
-            // settings applied with UseNamespacePrefixes are not part of OpenSettings, so carry them over unless the settings replace them
-            if (destination.OpenSettings.NamespacePrefixes is null && source.Features.Get<IXmlNamespacePrefixFeature>() is { } namespacePrefixes)
+            if (namespacePrefixes is not null)
             {
                 destination.Features.Set<IXmlNamespacePrefixFeature>(namespacePrefixes);
             }

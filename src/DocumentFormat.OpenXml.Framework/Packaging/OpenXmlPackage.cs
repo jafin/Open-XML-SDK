@@ -41,10 +41,8 @@ namespace DocumentFormat.OpenXml.Packaging
             {
                 _settings = value;
 
-                if (value?.NamespacePrefixes is { } namespacePrefixes)
-                {
-                    Features.Set<IXmlNamespacePrefixFeature>(new XmlNamespacePrefixFeature(namespacePrefixes));
-                }
+                // replace any feature installed by earlier settings, so the settings in effect always decide
+                Features.Set<IXmlNamespacePrefixFeature>(value?.NamespacePrefixes is { } namespacePrefixes ? new XmlNamespacePrefixFeature(namespacePrefixes) : null);
             }
         }
 

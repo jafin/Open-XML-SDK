@@ -75,6 +75,15 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void ElementRedeclaringDefaultNamespaceGetsGeneratedPrefixWhenNoneIsKnown()
+        {
+            var element = new OpenXmlUnknownElement(string.Empty, "item", "urn:custom");
+            element.AddNamespaceDeclaration(string.Empty, "urn:other");
+
+            Assert.Equal(@"<ns0:item xmlns=""urn:other"" xmlns:ns0=""urn:custom"" />", element.OuterXml);
+        }
+
+        [Fact]
         public void PrefixIsEmptyUnderDefaultDeclaration()
         {
             var cell = new Cell();

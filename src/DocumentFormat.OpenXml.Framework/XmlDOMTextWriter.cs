@@ -13,6 +13,9 @@ namespace DocumentFormat.OpenXml
         private readonly XmlWriter _writer;
         private readonly bool _ownsWriter = true;
 
+        // the number of scopes pushed before anything is written, i.e. by a wrapper that starts inside an element
+        private readonly int _topLevelDepth;
+
         // XmlWriter.LookupPrefix prefers a prefixed binding over the default namespace when both map to the same
         // uri, so track the default namespace in scope ourselves to allow elements to be written without a prefix.
         private readonly Stack<string> _defaultNamespaces = new();
@@ -49,6 +52,7 @@ namespace DocumentFormat.OpenXml
             _writer = writer;
             _ownsWriter = false;
             _defaultNamespaces.Push(defaultNamespace);
+            _topLevelDepth = 1;
         }
 
         /// <summary>
@@ -61,6 +65,11 @@ namespace DocumentFormat.OpenXml
         /// instead of the settings of the part the root belongs to.
         /// </summary>
         internal bool? UseDefaultNamespaceForRoot { get; set; }
+
+        /// <summary>
+        /// Gets a value indicating whether no element started on this writer is open, so the next element is the first one of the write.
+        /// </summary>
+        internal bool IsAtTopLevel => _defaultNamespaces.Count <= _topLevelDepth;
 
         public override WriteState WriteState => _writer.WriteState;
 

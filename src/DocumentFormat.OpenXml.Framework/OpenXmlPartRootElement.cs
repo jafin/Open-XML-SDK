@@ -401,30 +401,28 @@ namespace DocumentFormat.OpenXml
         private bool WriteNamespaceAtributes(XmlWriter xmlWrite, string? attributeNamespace)
         {
             var hasAttributeInNamespace = attributeNamespace is not null && HasAttributeInNamespace(attributeNamespace);
+            var namespaces = WriteAllNamespaceOnRoot ? new Dictionary<string, string>() : null;
 
-            if (!WriteAllNamespaceOnRoot)
+            if (namespaces is null && (attributeNamespace is null || hasAttributeInNamespace))
             {
-                if (attributeNamespace is not null && !hasAttributeInNamespace)
-                {
-                    foreach (var element in Descendants())
-                    {
-                        if (element.HasAttributeInNamespace(attributeNamespace))
-                        {
-                            return true;
-                        }
-                    }
-                }
-
                 return hasAttributeInNamespace;
             }
-
-            var namespaces = new Dictionary<string, string>();
 
             foreach (OpenXmlElement element in Descendants())
             {
                 if (attributeNamespace is not null && !hasAttributeInNamespace)
                 {
                     hasAttributeInNamespace = element.HasAttributeInNamespace(attributeNamespace);
+                }
+
+                if (namespaces is null)
+                {
+                    if (hasAttributeInNamespace)
+                    {
+                        break;
+                    }
+
+                    continue;
                 }
 
                 if (element.NamespaceDeclField is not null)
@@ -437,6 +435,11 @@ namespace DocumentFormat.OpenXml
                         }
                     }
                 }
+            }
+
+            if (namespaces is null)
+            {
+                return hasAttributeInNamespace;
             }
 
             foreach (var namespacePair in namespaces)

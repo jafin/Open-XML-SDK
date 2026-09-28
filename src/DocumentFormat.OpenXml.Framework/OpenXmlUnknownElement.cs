@@ -196,7 +196,15 @@ namespace DocumentFormat.OpenXml
 
             if (XmlParsed)
             {
-                xmlWriter.WriteStartElement(Prefix, LocalName, NamespaceUri);
+                var prefix = Prefix;
+
+                // without a prefix the element would be in the default namespace, which it redefines to another uri
+                if (string.IsNullOrEmpty(prefix) && NamespaceUri.Length > 0 && LookupNamespaceLocal(string.Empty) is { } localDefault && localDefault != NamespaceUri)
+                {
+                    prefix = GeneratePrefix();
+                }
+
+                xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
                 WriteAttributesTo(xmlWriter);
                 WriteContentTo(xmlWriter);
                 xmlWriter.WriteEndElement();

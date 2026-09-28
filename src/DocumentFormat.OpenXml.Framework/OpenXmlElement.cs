@@ -1490,9 +1490,9 @@ namespace DocumentFormat.OpenXml
                     return prefix;
                 }
 
-                // the ancestors are not written to xmlWriter when only this subtree is written (i.e. OuterXml), so
-                // check whether the tree puts this node in the default namespace
-                if (canUseDefault && Parent is not null && LookupElementPrefix(namespaceUri, includeConfiguredDefault: true) is { Length: 0 })
+                // the ancestors are not written to xmlWriter when only this subtree is written (i.e. OuterXml), so check
+                // whether the tree puts the node the write starts at in the default namespace. Nodes below it resolve through xmlWriter.
+                if (canUseDefault && Parent is not null && IsTopOfWrite(xmlWriter) && LookupElementPrefix(namespaceUri, includeConfiguredDefault: true) is { Length: 0 })
                 {
                     return string.Empty;
                 }
@@ -1500,7 +1500,34 @@ namespace DocumentFormat.OpenXml
 
             // if xmlWriter didn't find it, it means the node is constructed by user and is not in the tree yet
             // in this case, we use the predefined prefix
-            return Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
+            var builtInPrefix = Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
+
+            // without a prefix the node would be in the default namespace, which it redefines to another uri
+            if (string.IsNullOrEmpty(builtInPrefix) && namespaceUri.Length > 0 && localDefault is not null)
+            {
+                return GeneratePrefix();
+            }
+
+            return builtInPrefix;
+        }
+
+        private static bool IsTopOfWrite(XmlWriter xmlWriter)
+            => xmlWriter is XmlDOMTextWriter domWriter ? domWriter.IsAtTopLevel : xmlWriter.WriteState is WriteState.Start or WriteState.Prolog;
+
+        /// <summary>
+        /// Generates a prefix that is not declared on the current element.
+        /// </summary>
+        internal string GeneratePrefix()
+        {
+            for (var i = 0; ; i++)
+            {
+                var prefix = "ns" + i.ToString(CultureInfo.InvariantCulture);
+
+                if (LookupNamespaceLocal(prefix) is null)
+                {
+                    return prefix;
+                }
+            }
         }
 
         /// <summary>

@@ -4,6 +4,7 @@
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -187,6 +188,93 @@ namespace DocumentFormat.OpenXml.Tests
             }
 
             Assert.Equal($@"<worksheet xmlns:x=""{SpreadsheetNs}"" xmlns=""{SpreadsheetNs}"" />", Read(stream));
+        }
+
+        [Fact]
+        public void AttributeWithNullPrefixIsWritten()
+        {
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteStartElement(new Worksheet(), new[] { new OpenXmlAttribute(null!, "foo", string.Empty, "1") });
+                writer.WriteEndElement();
+            }
+
+            Assert.Equal($@"<x:worksheet foo=""1"" xmlns:x=""{SpreadsheetNs}"" />", Read(stream));
+        }
+
+        [Fact]
+        public void AttributesFromSingleUseEnumerableAreWritten()
+        {
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteStartElement(new Row(), new SingleUse<OpenXmlAttribute>(new OpenXmlAttribute(string.Empty, "r", string.Empty, "1")));
+                writer.WriteEndElement();
+            }
+
+            Assert.Equal($@"<x:row r=""1"" xmlns:x=""{SpreadsheetNs}"" />", Read(stream));
+        }
+
+        [Fact]
+        public void WriteElementWithoutSettingsMatchesWriteTo()
+        {
+            var document = new W.Document(new W.Body(new W.Paragraph(new W.Run(new W.Text(string.Empty) { Space = SpaceProcessingModeValues.Preserve }))));
+
+            var expected = new StringBuilder();
+            using (var xmlWriter = System.Xml.XmlWriter.Create(expected, new System.Xml.XmlWriterSettings { OmitXmlDeclaration = true }))
+            {
+                document.WriteTo(xmlWriter);
+            }
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteElement(document);
+            }
+
+            Assert.Equal(expected.ToString(), Read(stream));
+        }
+
+        [Fact]
+        public void CopiedElementUnderPreservedDefaultIsPrefixedWhenDefaultIsNotInScope()
+        {
+            var sourceRow = new Row { RowIndex = 1 };
+            var source = new Worksheet(new SheetData(sourceRow));
+            source.AddNamespaceDeclaration(string.Empty, SpreadsheetNs);
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteStartElement(new Worksheet());
+                writer.WriteStartElement(new SheetData());
+                writer.WriteStartElement(sourceRow);
+                writer.WriteEndElement();
+                writer.WriteEndElement();
+                writer.WriteEndElement();
+            }
+
+            Assert.Equal($@"<x:worksheet xmlns:x=""{SpreadsheetNs}""><x:sheetData><x:row r=""1"" /></x:sheetData></x:worksheet>", Read(stream));
+        }
+
+        private sealed class SingleUse<T> : IEnumerable<T>
+        {
+            private T[] _items;
+
+            public SingleUse(params T[] items) => _items = items;
+
+            public IEnumerator<T> GetEnumerator()
+            {
+                var items = _items;
+                _items = Array.Empty<T>();
+                return ((IEnumerable<T>)items).GetEnumerator();
+            }
+
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
 #if FEATURE_ASYNC_SAX_XML
