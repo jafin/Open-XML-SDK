@@ -67,6 +67,11 @@ namespace DocumentFormat.OpenXml
         internal bool? UseDefaultNamespaceForRoot { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether a part root element is writing its attributes while written in the default namespace.
+        /// </summary>
+        internal bool IsWritingRootInDefaultNamespace { get; set; }
+
+        /// <summary>
         /// Gets a value indicating whether no element started on this writer is open, so the next element is the first one of the write.
         /// </summary>
         internal bool IsAtTopLevel => _defaultNamespaces.Count <= _topLevelDepth;

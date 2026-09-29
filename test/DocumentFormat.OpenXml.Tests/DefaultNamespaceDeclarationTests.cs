@@ -84,6 +84,14 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void DefaultDeclarationOnElementWithoutNamespaceIsRejected()
+        {
+            var element = new OpenXmlUnknownElement("foo");
+
+            Assert.Throws<InvalidOperationException>(() => element.AddNamespaceDeclaration(string.Empty, "urn:x"));
+        }
+
+        [Fact]
         public void PrefixIsEmptyUnderDefaultDeclaration()
         {
             var cell = new Cell();

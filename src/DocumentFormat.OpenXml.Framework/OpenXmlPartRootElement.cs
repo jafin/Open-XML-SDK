@@ -18,9 +18,6 @@ namespace DocumentFormat.OpenXml
     public abstract class OpenXmlPartRootElement : OpenXmlCompositeElement
     {
         private OpenXmlElementContext? _context;
-
-        // set while the root's attributes are written, when the root is written in the default namespace
-        private bool _writingInDefaultNamespace;
         private bool? _standaloneDeclaration;
 
         /// <summary>
@@ -296,12 +293,18 @@ namespace DocumentFormat.OpenXml
                 throw new ArgumentNullException(nameof(xmlWriter));
             }
 
+            var useDefaultNamespace = xmlWriter is XmlDOMTextWriter { UseDefaultNamespaceForRoot: { } useDefaultNamespaceForWriter }
+                ? useDefaultNamespaceForWriter
+                : UsesConfiguredDefaultNamespace();
+
+            // raw XML is written as it is, with its own prefixes, so parse it when it is to be written in the default namespace
+            if (useDefaultNamespace && !XmlParsed)
+            {
+                MakeSureParsed();
+            }
+
             if (XmlParsed)
             {
-                var useDefaultNamespace = xmlWriter is XmlDOMTextWriter { UseDefaultNamespaceForRoot: { } useDefaultNamespaceForWriter }
-                    ? useDefaultNamespaceForWriter
-                    : UsesConfiguredDefaultNamespace();
-
                 // other writers cannot report the default namespace in scope, which is needed to write the content without prefixes
                 if (xmlWriter is not XmlDOMTextWriter && (useDefaultNamespace || LookupNamespaceLocal(string.Empty) is not null))
                 {
@@ -314,7 +317,11 @@ namespace DocumentFormat.OpenXml
 
                 xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
 
-                _writingInDefaultNamespace = useDefaultNamespace;
+                // the writer is per call, so it carries this for ShouldWriteNamespaceDeclaration rather than the element
+                if (xmlWriter is XmlDOMTextWriter domWriter)
+                {
+                    domWriter.IsWritingRootInDefaultNamespace = useDefaultNamespace;
+                }
 
                 try
                 {
@@ -330,7 +337,10 @@ namespace DocumentFormat.OpenXml
                 }
                 finally
                 {
-                    _writingInDefaultNamespace = false;
+                    if (xmlWriter is XmlDOMTextWriter writer)
+                    {
+                        writer.IsWritingRootInDefaultNamespace = false;
+                    }
                 }
 
                 if (HasChildren || !string.IsNullOrEmpty(InnerText))
@@ -356,8 +366,8 @@ namespace DocumentFormat.OpenXml
             => Features.Get<IXmlNamespacePrefixFeature>().IsDefaultNamespaceForRoot(NamespaceUri);
 
         // a default namespace declared on the root for another namespace is replaced when the root is written in the default namespace
-        private protected override bool ShouldWriteNamespaceDeclaration(string prefix, string uri)
-            => prefix.Length != 0 || uri == NamespaceUri || !_writingInDefaultNamespace;
+        private protected override bool ShouldWriteNamespaceDeclaration(XmlWriter xmlWriter, string prefix, string uri)
+            => prefix.Length != 0 || uri == NamespaceUri || xmlWriter is not XmlDOMTextWriter { IsWritingRootInDefaultNamespace: true };
 
         /// <summary>
         /// A default namespace never applies to attributes, so when the root's namespace is written as the default namespace and an
@@ -404,28 +414,13 @@ namespace DocumentFormat.OpenXml
         {
             hoistedPrefixes = null;
             var hasAttributeInNamespace = attributeNamespace is not null && HasAttributeInNamespace(attributeNamespace);
-            var namespaces = WriteAllNamespaceOnRoot ? new Dictionary<string, string>() : null;
-
-            if (namespaces is null && (attributeNamespace is null || hasAttributeInNamespace))
-            {
-                return hasAttributeInNamespace;
-            }
+            var namespaces = new Dictionary<string, string>();
 
             foreach (OpenXmlElement element in Descendants())
             {
                 if (attributeNamespace is not null && !hasAttributeInNamespace)
                 {
                     hasAttributeInNamespace = element.HasAttributeInNamespace(attributeNamespace);
-                }
-
-                if (namespaces is null)
-                {
-                    if (hasAttributeInNamespace)
-                    {
-                        break;
-                    }
-
-                    continue;
                 }
 
                 if (element.NamespaceDeclField is not null)
@@ -440,7 +435,7 @@ namespace DocumentFormat.OpenXml
                 }
             }
 
-            if (namespaces is null)
+            if (!WriteAllNamespaceOnRoot)
             {
                 return hasAttributeInNamespace;
             }

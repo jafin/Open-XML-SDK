@@ -735,7 +735,7 @@ namespace DocumentFormat.OpenXml
         /// </summary>
         /// <param name="prefix">The prefix. An empty prefix declares the default namespace (<c>xmlns="uri"</c>).</param>
         /// <param name="uri">The uri.</param>
-        /// <exception cref="InvalidOperationException">Thrown if the prefix is already used in the current node.</exception>
+        /// <exception cref="InvalidOperationException">Thrown if the prefix is already used in the current node, or if a default namespace is declared on an element that has no namespace.</exception>
         public void AddNamespaceDeclaration(string prefix, string uri)
         {
             if (prefix is null)
@@ -746,6 +746,12 @@ namespace DocumentFormat.OpenXml
             if (string.IsNullOrEmpty(uri))
             {
                 throw new ArgumentNullException(nameof(uri));
+            }
+
+            // an element with no namespace cannot be written inside a default namespace it declares itself
+            if (prefix.Length == 0 && NamespaceUri.Length == 0)
+            {
+                throw new InvalidOperationException(ExceptionMessages.DefaultNamespaceOnElementWithoutNamespace);
             }
 
             MakeSureParsed();
@@ -1517,18 +1523,7 @@ namespace DocumentFormat.OpenXml
         /// <summary>
         /// Generates a prefix that is not declared on the current element.
         /// </summary>
-        internal string GeneratePrefix()
-        {
-            for (var i = 0; ; i++)
-            {
-                var prefix = "ns" + i.ToString(CultureInfo.InvariantCulture);
-
-                if (LookupNamespaceLocal(prefix) is null)
-                {
-                    return prefix;
-                }
-            }
-        }
+        internal string GeneratePrefix() => NamespacePrefixGenerator.Generate(prefix => LookupNamespaceLocal(prefix) is not null);
 
         /// <summary>
         /// Gets a value indicating whether the current element has an attribute in <paramref name="namespaceUri"/>.
@@ -1563,7 +1558,7 @@ namespace DocumentFormat.OpenXml
             return false;
         }
 
-        private protected virtual bool ShouldWriteNamespaceDeclaration(string prefix, string uri) => true;
+        private protected virtual bool ShouldWriteNamespaceDeclaration(XmlWriter xmlWriter, string prefix, string uri) => true;
 
         private protected virtual void WriteAttributesTo(XmlWriter xmlWriter)
         {
@@ -1572,7 +1567,7 @@ namespace DocumentFormat.OpenXml
             {
                 foreach (var item in NamespaceDeclField)
                 {
-                    if (ShouldWriteNamespaceDeclaration(item.Key, item.Value))
+                    if (ShouldWriteNamespaceDeclaration(xmlWriter, item.Key, item.Value))
                     {
                         xmlWriter.WriteNamespaceDeclaration(item.Key, item.Value);
                     }

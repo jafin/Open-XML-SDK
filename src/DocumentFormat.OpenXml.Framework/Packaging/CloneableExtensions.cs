@@ -17,12 +17,19 @@ public static class CloneableExtensions
     /// <summary>
     /// Creates an editable clone of this OpenXml package, opened on a
     /// <see cref="MemoryStream"/> with expandable capacity and using
-    /// default OpenSettings.
+    /// default OpenSettings. The namespace prefix settings in effect for this package are kept.
     /// </summary>
     /// <returns>The cloned OpenXml package.</returns>
     public static TPackage Clone<TPackage>(this TPackage openXmlPackage)
         where TPackage : OpenXmlPackage
-        => openXmlPackage.Clone(new MemoryStream(), true, new OpenSettings());
+    {
+        if (openXmlPackage is null)
+        {
+            throw new ArgumentNullException(nameof(openXmlPackage));
+        }
+
+        return openXmlPackage.CloneOnStream(new MemoryStream(), true, new OpenSettings(), inheritNamespacePrefixes: true);
+    }
 
     /// <summary>
     /// Creates a clone of this OpenXml package, opened on the given stream.
@@ -45,7 +52,7 @@ public static class CloneableExtensions
             throw new ArgumentNullException(nameof(stream));
         }
 
-        return openXmlPackage.Clone(stream, openXmlPackage.FileOpenAccess == FileAccess.ReadWrite, openXmlPackage.OpenSettings);
+        return openXmlPackage.CloneOnStream(stream, openXmlPackage.FileOpenAccess == FileAccess.ReadWrite, openXmlPackage.OpenSettings, inheritNamespacePrefixes: true);
     }
 
     /// <summary>
@@ -70,7 +77,7 @@ public static class CloneableExtensions
             throw new ArgumentNullException(nameof(stream));
         }
 
-        return openXmlPackage.Clone(stream, isEditable, openXmlPackage.OpenSettings);
+        return openXmlPackage.CloneOnStream(stream, isEditable, openXmlPackage.OpenSettings, inheritNamespacePrefixes: true);
     }
 
     /// <summary>
@@ -94,18 +101,22 @@ public static class CloneableExtensions
             throw new ArgumentNullException(nameof(stream));
         }
 
-        return openXmlPackage.Features.GetRequired<IPackageFactoryFeature<TPackage>>()
+        return openXmlPackage.CloneOnStream(stream, isEditable, openSettings, inheritNamespacePrefixes: false);
+    }
+
+    private static TPackage CloneOnStream<TPackage>(this TPackage openXmlPackage, Stream stream, bool isEditable, OpenSettings openSettings, bool inheritNamespacePrefixes)
+        where TPackage : OpenXmlPackage
+        => openXmlPackage.Features.GetRequired<IPackageFactoryFeature<TPackage>>()
             .Create()
             .UseSettings(openSettings)
             .Build()
             .Open(stream, PackageOpenMode.Create)
-            .CopyFrom(openXmlPackage)
+            .CopyFrom(openXmlPackage, inheritNamespacePrefixes)
             .Reload(isEditable);
-    }
 
     internal static void Clone<TPackage>(this TPackage source, TPackage destination)
         where TPackage : OpenXmlPackage
-        => destination.CopyFrom(source).Reload();
+        => destination.CopyFrom(source, inheritNamespacePrefixes: true).Reload();
 
     /// <summary>
     /// Creates a clone of this OpenXml package opened from the given file
@@ -129,7 +140,7 @@ public static class CloneableExtensions
             throw new ArgumentException($"'{nameof(path)}' cannot be null or empty.", nameof(path));
         }
 
-        return openXmlPackage.Clone(path, openXmlPackage.FileOpenAccess == FileAccess.ReadWrite, openXmlPackage.OpenSettings);
+        return openXmlPackage.CloneOnPath(path, openXmlPackage.FileOpenAccess == FileAccess.ReadWrite, openXmlPackage.OpenSettings, inheritNamespacePrefixes: true);
     }
 
     /// <summary>
@@ -155,7 +166,7 @@ public static class CloneableExtensions
             throw new ArgumentException($"'{nameof(path)}' cannot be null or empty.", nameof(path));
         }
 
-        return openXmlPackage.Clone(path, isEditable, openXmlPackage.OpenSettings);
+        return openXmlPackage.CloneOnPath(path, isEditable, openXmlPackage.OpenSettings, inheritNamespacePrefixes: true);
     }
 
     /// <summary>
@@ -180,14 +191,18 @@ public static class CloneableExtensions
             throw new ArgumentNullException(nameof(path));
         }
 
-        return openXmlPackage.Features.GetRequired<IPackageFactoryFeature<TPackage>>()
+        return openXmlPackage.CloneOnPath(path, isEditable, openSettings, inheritNamespacePrefixes: false);
+    }
+
+    private static TPackage CloneOnPath<TPackage>(this TPackage openXmlPackage, string path, bool isEditable, OpenSettings? openSettings, bool inheritNamespacePrefixes)
+        where TPackage : OpenXmlPackage
+        => openXmlPackage.Features.GetRequired<IPackageFactoryFeature<TPackage>>()
               .Create()
               .UseSettings(openSettings ?? new())
               .Build()
               .Open(path, PackageOpenMode.Create)
-              .CopyFrom(openXmlPackage)
+              .CopyFrom(openXmlPackage, inheritNamespacePrefixes)
               .Reload(isEditable);
-    }
 
     /// <summary>
     /// Creates a clone of this OpenXml package, opened on the specified instance
@@ -210,7 +225,7 @@ public static class CloneableExtensions
             throw new ArgumentNullException(nameof(package));
         }
 
-        return openXmlPackage.Clone(package, openXmlPackage.OpenSettings);
+        return openXmlPackage.CloneOnPackage(package, openXmlPackage.OpenSettings, inheritNamespacePrefixes: true);
     }
 
     /// <summary>
@@ -234,15 +249,19 @@ public static class CloneableExtensions
             throw new ArgumentNullException(nameof(package));
         }
 
-        return openXmlPackage.Features.GetRequired<IPackageFactoryFeature<TPackage>>()
+        return openXmlPackage.CloneOnPackage(package, openSettings, inheritNamespacePrefixes: false);
+    }
+
+    private static TPackage CloneOnPackage<TPackage>(this TPackage openXmlPackage, Package package, OpenSettings openSettings, bool inheritNamespacePrefixes)
+        where TPackage : OpenXmlPackage
+        => openXmlPackage.Features.GetRequired<IPackageFactoryFeature<TPackage>>()
               .Create()
               .UseSettings(openSettings ?? new())
               .Build()
               .Open(package)
-              .CopyFrom(openXmlPackage);
-    }
+              .CopyFrom(openXmlPackage, inheritNamespacePrefixes);
 
-    private static TPackage CopyFrom<TPackage>(this TPackage destination, TPackage source, OpenSettings? settings = null)
+    private static TPackage CopyFrom<TPackage>(this TPackage destination, TPackage source, bool inheritNamespacePrefixes)
         where TPackage : OpenXmlPackage
     {
         lock (source.Features.GetRequired<ILockFeature>().SyncLock)
@@ -257,20 +276,16 @@ public static class CloneableExtensions
                 destination.AddPart(part.OpenXmlPart, part.RelationshipId);
             }
 
-            // namespace prefix settings given for the clone win; otherwise the source's current settings carry over, including
-            // ones applied with UseNamespacePrefixes after it was opened, which are not part of its OpenSettings. Clone overloads
-            // without settings pass the source's own OpenSettings, which must not count as settings given for the clone.
-            var sourceNamespacePrefixes = source.Features.Get<IXmlNamespacePrefixFeature>();
-            var namespacePrefixes = ReferenceEquals(destination.OpenSettings, source.OpenSettings)
-                ? sourceNamespacePrefixes
-                : destination.Features.Get<IXmlNamespacePrefixFeature>() ?? sourceNamespacePrefixes;
+            // Clone overloads without OpenSettings keep the source's current namespace prefix settings, including ones applied with
+            // UseNamespacePrefixes after it was opened; overloads with OpenSettings use exactly those, applied when the clone was opened
+            var namespacePrefixes = inheritNamespacePrefixes
+                ? source.Features.Get<IXmlNamespacePrefixFeature>()
+                : destination.Features.Get<IXmlNamespacePrefixFeature>();
 
-            destination.OpenSettings = settings ?? new(source.OpenSettings);
+            destination.OpenSettings = new(source.OpenSettings);
 
-            if (namespacePrefixes is not null)
-            {
-                destination.Features.Set<IXmlNamespacePrefixFeature>(namespacePrefixes);
-            }
+            // the OpenSettings setter replaces the feature, so set the one decided above
+            destination.Features.Set<IXmlNamespacePrefixFeature>(namespacePrefixes);
 
             destination.Features.Set<IPartUriFeature>(existing);
 

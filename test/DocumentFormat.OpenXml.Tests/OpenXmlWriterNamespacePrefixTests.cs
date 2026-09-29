@@ -296,14 +296,42 @@ namespace DocumentFormat.OpenXml.Tests
             Assert.Equal(@"<ns0:item xmlns=""urn:other"" xmlns:ns0=""urn:custom"" />", Read(stream));
         }
 
+        [Fact]
+        public void UnknownElementWithEmptyPrefixIsUnchangedWithoutSettings()
+        {
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteStartElement(new Worksheet());
+                writer.WriteStartElement(new OpenXmlUnknownElement(string.Empty, "shape", VmlNs));
+                writer.WriteEndElement();
+                writer.WriteEndElement();
+            }
+
+            Assert.Equal($@"<x:worksheet xmlns:x=""{SpreadsheetNs}""><shape xmlns=""{VmlNs}"" /></x:worksheet>", Read(stream));
+        }
+
+        [Fact]
+        public void CopiedUnknownElementDeclaringItsNamespaceIsUnchangedWithoutSettings()
+        {
+            var xml = Copy($@"<x:worksheet xmlns:x=""{SpreadsheetNs}""><x:sheetData /><shape xmlns=""{VmlNs}"" /></x:worksheet>", settings: null);
+
+            Assert.Equal($@"<x:worksheet xmlns:x=""{SpreadsheetNs}""><x:sheetData /><shape xmlns=""{VmlNs}"" /></x:worksheet>", xml);
+        }
+
+        private const string VmlNs = "urn:schemas-microsoft-com:vml";
+
         private static string CopyExcelStyleSheet(XmlNamespacePrefixSettings settings)
+            => Copy($@"<worksheet xmlns=""{SpreadsheetNs}"" xmlns:r=""http://schemas.openxmlformats.org/officeDocument/2006/relationships""><sheetData><row r=""1""><c r=""A1""><v>1</v></c></row></sheetData></worksheet>", settings);
+
+        private static string Copy(string sourceXml, XmlNamespacePrefixSettings settings)
         {
             using var package = new MemoryStream();
             using var doc = SpreadsheetDocument.Create(package, SpreadsheetDocumentType.Workbook);
             var sourcePart = AddWorksheetPart(doc);
 
-            using (var data = new MemoryStream(Encoding.UTF8.GetBytes(
-                $@"<worksheet xmlns=""{SpreadsheetNs}"" xmlns:r=""http://schemas.openxmlformats.org/officeDocument/2006/relationships""><sheetData><row r=""1""><c r=""A1""><v>1</v></c></row></sheetData></worksheet>")))
+            using (var data = new MemoryStream(Encoding.UTF8.GetBytes(sourceXml)))
             {
                 sourcePart.FeedData(data);
             }

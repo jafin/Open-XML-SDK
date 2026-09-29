@@ -293,6 +293,28 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void CloneWithSettingsWithoutNamespacePrefixesUsesBuiltInPrefixes()
+        {
+            using var stream = GetStream(TestFiles.Spreadsheet, true);
+            using var doc = SpreadsheetDocument.Open(stream, true, new OpenSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true } });
+
+            using var cloneStream = new MemoryStream();
+            using var clone = doc.Clone(cloneStream, true, new OpenSettings());
+
+            Assert.StartsWith("<x:worksheet ", StripDeclaration(SaveAndRead(clone.WorkbookPart!.WorksheetParts.First())));
+        }
+
+        [Fact]
+        public void PresetAppliesToRootCreatedFromOuterXml()
+        {
+            using var stream = new MemoryStream();
+            using var doc = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook).UseDefaultNamespaceForRoot();
+            var worksheetPart = AddWorksheet(doc, new Worksheet($@"<x:worksheet xmlns:x=""{SpreadsheetNs}""><x:sheetData /></x:worksheet>"));
+
+            Assert.Equal($@"{XmlDeclaration}<worksheet xmlns:x=""{SpreadsheetNs}"" xmlns=""{SpreadsheetNs}""><sheetData /></worksheet>", SaveAndRead(worksheetPart));
+        }
+
+        [Fact]
         public void ClonedPackageKeepsSettingsAppliedWithExtension()
         {
             using var stream = new MemoryStream();
