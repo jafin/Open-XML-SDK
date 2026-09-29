@@ -319,11 +319,11 @@ namespace DocumentFormat.OpenXml
                 try
                 {
                     // fix bug #225919, write out all namespace into to root
-                    var hasAttributeInNamespace = WriteNamespaceAtributes(xmlWriter, useDefaultNamespace ? NamespaceUri : null);
+                    var hasAttributeInNamespace = WriteNamespaceAtributes(xmlWriter, useDefaultNamespace ? NamespaceUri : null, out var hoistedPrefixes);
 
                     if (hasAttributeInNamespace)
                     {
-                        WritePrefixDeclarationForAttributes(xmlWriter);
+                        WritePrefixDeclarationForAttributes(xmlWriter, hoistedPrefixes);
                     }
 
                     WriteAttributesTo(xmlWriter);
@@ -363,7 +363,9 @@ namespace DocumentFormat.OpenXml
         /// A default namespace never applies to attributes, so when the root's namespace is written as the default namespace and an
         /// attribute in it exists, declare its built-in prefix as well. Otherwise it would be declared on every element with such an attribute.
         /// </summary>
-        private void WritePrefixDeclarationForAttributes(XmlWriter xmlWriter)
+        /// <param name="xmlWriter">The writer.</param>
+        /// <param name="hoistedPrefixes">The prefixes of descendant declarations already written on the root.</param>
+        private void WritePrefixDeclarationForAttributes(XmlWriter xmlWriter, List<string>? hoistedPrefixes)
         {
             var namespaceUri = NamespaceUri;
 
@@ -385,7 +387,7 @@ namespace DocumentFormat.OpenXml
 
             var prefix = Features.GetNamespaceResolver().LookupPrefix(namespaceUri);
 
-            if (string.IsNullOrEmpty(prefix) || LookupNamespaceLocal(prefix) is not null)
+            if (string.IsNullOrEmpty(prefix) || LookupNamespaceLocal(prefix) is not null || (hoistedPrefixes is not null && hoistedPrefixes.Contains(prefix)))
             {
                 return;
             }
@@ -398,8 +400,9 @@ namespace DocumentFormat.OpenXml
         /// <paramref name="attributeNamespace"/> exists in the subtree.
         /// </summary>
         /// <returns><c>true</c> if <paramref name="attributeNamespace"/> is not null and an attribute in it exists.</returns>
-        private bool WriteNamespaceAtributes(XmlWriter xmlWrite, string? attributeNamespace)
+        private bool WriteNamespaceAtributes(XmlWriter xmlWrite, string? attributeNamespace, out List<string>? hoistedPrefixes)
         {
+            hoistedPrefixes = null;
             var hasAttributeInNamespace = attributeNamespace is not null && HasAttributeInNamespace(attributeNamespace);
             var namespaces = WriteAllNamespaceOnRoot ? new Dictionary<string, string>() : null;
 
@@ -451,6 +454,7 @@ namespace DocumentFormat.OpenXml
                         string.IsNullOrEmpty(LookupNamespaceLocal(namespacePair.Key)))
                     {
                         xmlWrite.WriteAttributeString(OpenXmlElementContext.XmlnsPrefix, namespacePair.Key, OpenXmlElementContext.XmlnsUri, namespacePair.Value);
+                        (hoistedPrefixes ??= new()).Add(namespacePair.Key);
                     }
                 }
             }

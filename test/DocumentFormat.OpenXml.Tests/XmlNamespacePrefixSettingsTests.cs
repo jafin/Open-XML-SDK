@@ -140,6 +140,69 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void NonEmptyPrefixIsRejectedBeforeFileIsOpened()
+        {
+            var settings = new XmlNamespacePrefixSettings();
+            settings.Prefixes[SpreadsheetNs] = "ss";
+            var path = GetTestFilePath(TestFiles.Spreadsheet);
+
+            try
+            {
+                Assert.Throws<ArgumentException>(() => SpreadsheetDocument.Open(path, true, new OpenSettings { NamespacePrefixes = settings }));
+
+                // the file must not be left open
+                using (File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                }
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Fact]
+        public void PrefixDeclarationForAttributesIsSkippedWhenPrefixIsUsedByDescendant()
+        {
+            using var stream = new MemoryStream();
+            using var doc = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document).UseDefaultNamespaceForRoot();
+            var mainPart = doc.AddMainDocumentPart();
+            var body = new W.Body(new W.Paragraph(new W.ParagraphProperties(new W.Justification { Val = W.JustificationValues.Center })));
+            body.AddNamespaceDeclaration("w", "urn:other");
+            mainPart.Document = new W.Document(body);
+            mainPart.Document.AddNamespaceDeclaration("r", RelationshipsNs);
+
+            var xml = SaveAndRead(mainPart);
+
+            var jc = System.Xml.Linq.XDocument.Parse(xml).Descendants(System.Xml.Linq.XName.Get("jc", WordNs)).Single();
+            Assert.Equal("center", jc.Attribute(System.Xml.Linq.XName.Get("val", WordNs))!.Value);
+        }
+
+        [Fact]
+        public void CustomFeatureReturningNullPrefixIsTreatedAsNotConfigured()
+        {
+            using var stream = new MemoryStream();
+            using var doc = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook);
+            doc.Features.Set<DocumentFormat.OpenXml.Features.IXmlNamespacePrefixFeature>(new NullPrefixFeature());
+            var worksheetPart = AddWorksheet(doc, new Worksheet(new SheetData()));
+
+            Assert.Equal($@"{XmlDeclaration}<x:worksheet xmlns:x=""{SpreadsheetNs}""><x:sheetData /></x:worksheet>", SaveAndRead(worksheetPart));
+        }
+
+        private sealed class NullPrefixFeature : DocumentFormat.OpenXml.Features.IXmlNamespacePrefixFeature
+        {
+            public bool UseDefaultNamespaceForRoot => false;
+
+            public bool PreserveLoadedDefaultNamespace => false;
+
+            public bool TryGetPrefix(string namespaceUri, out string prefix)
+            {
+                prefix = null!;
+                return true;
+            }
+        }
+
+        [Fact]
         public void OpenSettingsApplyPresetToLoadedParts()
         {
             using var stream = GetStream(TestFiles.Spreadsheet, true);

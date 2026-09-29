@@ -15,7 +15,13 @@ namespace DocumentFormat.OpenXml.Features
                 return false;
             }
 
-            return feature.TryGetPrefix(namespaceUri, out var prefix) ? prefix.Length == 0 : feature.UseDefaultNamespaceForRoot;
+            // only an empty prefix is currently honoured; a missing prefix falls back to the preset
+            if (feature.TryGetPrefix(namespaceUri, out var prefix) && prefix is not null)
+            {
+                return prefix.Length == 0;
+            }
+
+            return feature.UseDefaultNamespaceForRoot;
         }
     }
 }

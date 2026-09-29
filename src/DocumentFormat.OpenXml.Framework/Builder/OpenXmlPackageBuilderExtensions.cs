@@ -110,7 +110,16 @@ internal static class OpenXmlPackageBuilderExtensions
 
     internal static IPackageBuilder<TPackage> UseSettings<TPackage>(this IPackageBuilder<TPackage> builder, OpenSettings settings)
        where TPackage : OpenXmlPackage
-       => builder.Use(package => package.OpenSettings = settings);
+    {
+        // the settings are applied once the package has been opened, so validate them first to not leave it open when they are invalid
+        if (settings?.NamespacePrefixes is { } namespacePrefixes)
+        {
+            _ = new XmlNamespacePrefixFeature(namespacePrefixes);
+        }
+
+        // public Clone overloads may pass null, which the setter treats as default settings
+        return builder.Use(package => package.OpenSettings = settings!);
+    }
 
     internal static IPackageBuilder<TPackage> UseDefaultBehaviorAndLockBuilder<TPackage>(this IPackageBuilder<TPackage> builder)
         where TPackage : OpenXmlPackage

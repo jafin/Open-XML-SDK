@@ -261,6 +261,79 @@ namespace DocumentFormat.OpenXml.Tests
             Assert.Equal($@"<x:worksheet xmlns:x=""{SpreadsheetNs}""><x:sheetData><x:row r=""1"" /></x:sheetData></x:worksheet>", Read(stream));
         }
 
+        [Fact]
+        public void CopyingWithReaderWithoutSettingsKeepsPrefixes()
+        {
+            var xml = CopyExcelStyleSheet(settings: null);
+
+            Assert.StartsWith("<x:worksheet ", xml);
+            Assert.Contains("<x:sheetData><x:row r=\"1\"><x:c r=\"A1\"><x:v>1</x:v></x:c></x:row></x:sheetData>", xml);
+        }
+
+        [Fact]
+        public void CopyingWithReaderWithSettingsUsesDefaultNamespace()
+        {
+            var xml = CopyExcelStyleSheet(new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true });
+
+            Assert.StartsWith("<worksheet ", xml);
+            Assert.Contains("<sheetData><row r=\"1\"><c r=\"A1\"><v>1</v></c></row></sheetData>", xml);
+        }
+
+        [Fact]
+        public void StreamedElementRedeclaringDefaultNamespaceGetsGeneratedPrefixWhenNoneIsKnown()
+        {
+            var element = new OpenXmlUnknownElement(string.Empty, "item", "urn:custom");
+            element.AddNamespaceDeclaration(string.Empty, "urn:other");
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteStartElement(element, Array.Empty<OpenXmlAttribute>());
+                writer.WriteEndElement();
+            }
+
+            Assert.Equal(@"<ns0:item xmlns=""urn:other"" xmlns:ns0=""urn:custom"" />", Read(stream));
+        }
+
+        private static string CopyExcelStyleSheet(XmlNamespacePrefixSettings settings)
+        {
+            using var package = new MemoryStream();
+            using var doc = SpreadsheetDocument.Create(package, SpreadsheetDocumentType.Workbook);
+            var sourcePart = AddWorksheetPart(doc);
+
+            using (var data = new MemoryStream(Encoding.UTF8.GetBytes(
+                $@"<worksheet xmlns=""{SpreadsheetNs}"" xmlns:r=""http://schemas.openxmlformats.org/officeDocument/2006/relationships""><sheetData><row r=""1""><c r=""A1""><v>1</v></c></row></sheetData></worksheet>")))
+            {
+                sourcePart.FeedData(data);
+            }
+
+            using var target = new MemoryStream();
+
+            using (var reader = new OpenXmlPartReader(sourcePart))
+            using (var writer = new OpenXmlPartWriter(target, new OpenXmlPartWriterSettings { NamespacePrefixes = settings }))
+            {
+                while (reader.Read())
+                {
+                    if (reader.IsStartElement)
+                    {
+                        writer.WriteStartElement(reader);
+
+                        if (reader.ElementType.IsSubclassOf(typeof(OpenXmlLeafTextElement)))
+                        {
+                            writer.WriteString(reader.GetText());
+                        }
+                    }
+                    else if (reader.IsEndElement)
+                    {
+                        writer.WriteEndElement();
+                    }
+                }
+            }
+
+            return Read(target);
+        }
+
         private sealed class SingleUse<T> : IEnumerable<T>
         {
             private T[] _items;

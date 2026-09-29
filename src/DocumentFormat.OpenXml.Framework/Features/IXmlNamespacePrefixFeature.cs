@@ -28,7 +28,10 @@ namespace DocumentFormat.OpenXml.Features
         /// <param name="namespaceUri">The namespace uri.</param>
         /// <param name="prefix">The configured prefix.</param>
         /// <returns><c>true</c> if a prefix is configured for <paramref name="namespaceUri"/>; otherwise <c>false</c>.</returns>
-        /// <remarks>An entry takes precedence over <see cref="UseDefaultNamespaceForRoot"/>. Only the namespace of a part's root element may be written as the default namespace.</remarks>
+        /// <remarks>
+        /// An entry takes precedence over <see cref="UseDefaultNamespaceForRoot"/>. Only the namespace of a part's root element may be written as the default namespace.
+        /// Only an empty prefix is currently honoured: an entry with any other prefix leaves the namespace written with its built-in prefix.
+        /// </remarks>
         bool TryGetPrefix(string namespaceUri, out string prefix);
     }
 }
