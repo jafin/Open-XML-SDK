@@ -129,6 +129,35 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void NullPrefixIsRejected()
+        {
+            var settings = new XmlNamespacePrefixSettings();
+            settings.Prefixes[SpreadsheetNs] = null!;
+
+            using var stream = new MemoryStream();
+            using var doc = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook);
+
+            Assert.Throws<ArgumentException>(() => doc.UseNamespacePrefixes(settings));
+        }
+
+        [Fact]
+        public void CloneIsUnaffectedBySettingsChangedAfterOpen()
+        {
+            var settings = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true };
+
+            using var stream = GetStream(TestFiles.Spreadsheet, true);
+            using var doc = SpreadsheetDocument.Open(stream, true, new OpenSettings { NamespacePrefixes = settings });
+            settings.Prefixes[SpreadsheetNs] = "ss";
+
+            using var clone = doc.Clone();
+            using var cloneStream = new MemoryStream();
+            using var streamClone = doc.Clone(cloneStream);
+
+            Assert.StartsWith("<worksheet ", StripDeclaration(SaveAndRead(clone.WorkbookPart!.WorksheetParts.First())));
+            Assert.StartsWith("<worksheet ", StripDeclaration(SaveAndRead(streamClone.WorkbookPart!.WorksheetParts.First())));
+        }
+
+        [Fact]
         public void NonEmptyPrefixIsRejectedOnOpen()
         {
             var settings = new XmlNamespacePrefixSettings();

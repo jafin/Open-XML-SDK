@@ -1084,14 +1084,15 @@ namespace DocumentFormat.OpenXml
                 throw new ArgumentNullException(nameof(xmlWriter));
             }
 
+            ParseIfDefaultNamespaceInScope(xmlWriter);
+
             if (XmlParsed)
             {
-                // other writers cannot report the default namespace in scope, which is needed to write the content without prefixes
+                // other writers cannot report the default namespace in scope, which is needed to write the content without prefixes.
+                // The element declares its own default namespace, so the one outside it is never used.
                 if (xmlWriter is not XmlDOMTextWriter && LookupNamespaceLocal(string.Empty) is not null)
                 {
-                    var defaultNamespace = NamespaceUri.Length > 0 && xmlWriter.LookupPrefix(NamespaceUri) is { Length: 0 } ? NamespaceUri : string.Empty;
-
-                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, defaultNamespace);
+                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty);
                     WriteTo(trackingWriter);
                     return;
                 }
@@ -1489,9 +1490,10 @@ namespace DocumentFormat.OpenXml
                     return string.Empty;
                 }
 
+                // a default namespace the writer reports is not used: it was not tracked, e.g. written directly to the writer, so it is not opted in to
                 prefix = xmlWriter.LookupPrefix(namespaceUri);
 
-                if (!string.IsNullOrEmpty(prefix) || (prefix is not null && canUseDefault))
+                if (!string.IsNullOrEmpty(prefix))
                 {
                     return prefix;
                 }
@@ -1506,15 +1508,36 @@ namespace DocumentFormat.OpenXml
 
             // if xmlWriter didn't find it, it means the node is constructed by user and is not in the tree yet
             // in this case, we use the predefined prefix
-            var builtInPrefix = Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
+            return Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
+        }
 
-            // without a prefix the node would be in the default namespace, which it redefines to another uri
-            if (string.IsNullOrEmpty(builtInPrefix) && namespaceUri.Length > 0 && localDefault is not null)
+        /// <summary>
+        /// Gets a prefix for the current element's namespace for a wrapper element whose content is parsed on its own. Unlike
+        /// <see cref="Prefix"/> it is not empty for a known element under a default namespace declaration, as the default
+        /// namespace would then apply to unprefixed content that has no namespace.
+        /// </summary>
+        private protected string GetWrapperPrefix()
+        {
+            var prefix = Prefix;
+
+            if (prefix.Length == 0 && NamespaceUri.Length > 0 && this is not OpenXmlUnknownElement && Features.GetNamespaceResolver().LookupPrefix(NamespaceUri) is { Length: > 0 } builtInPrefix)
             {
-                return GeneratePrefix();
+                return builtInPrefix;
             }
 
-            return builtInPrefix;
+            return prefix;
+        }
+
+        /// <summary>
+        /// Parses the current element if it would otherwise be written from its original XML inside a default namespace, which
+        /// would then apply to its unprefixed content that has no namespace. The writer cannot declare <c>xmlns=""</c> inside raw XML.
+        /// </summary>
+        private protected void ParseIfDefaultNamespaceInScope(XmlWriter xmlWriter)
+        {
+            if (!XmlParsed && xmlWriter is XmlDOMTextWriter { DefaultNamespace.Length: > 0 })
+            {
+                MakeSureParsed();
+            }
         }
 
         private static bool IsTopOfWrite(XmlWriter xmlWriter)
@@ -2707,7 +2730,9 @@ namespace DocumentFormat.OpenXml
             while (node is not null)
             {
                 var ret = node.LookupNamespaceLocal(prefix);
-                if (!string.IsNullOrEmpty(ret))
+
+                // an empty default namespace declaration (xmlns="") undeclares the default namespace of the ancestors
+                if (!string.IsNullOrEmpty(ret) || (ret is not null && prefix.Length == 0))
                 {
                     return ret;
                 }

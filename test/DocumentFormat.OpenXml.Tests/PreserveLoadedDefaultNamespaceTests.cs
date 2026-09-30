@@ -78,6 +78,28 @@ namespace DocumentFormat.OpenXml.Tests
             Assert.Equal(SpreadsheetNs, worksheet.LookupNamespace(string.Empty));
         }
 
+        [Fact]
+        public void LookupNamespaceFindsUndeclaredDefaultNamespace()
+        {
+            const string Input = $@"<worksheet xmlns=""{SpreadsheetNs}""><x:sheetData xmlns:x=""{SpreadsheetNs}"" xmlns=""""><foo /></x:sheetData></worksheet>";
+
+            using var stream = CreatePackage(Input);
+            using var doc = SpreadsheetDocument.Open(stream, true, new OpenSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { PreserveLoadedDefaultNamespace = true } });
+            var foo = doc.WorkbookPart!.WorksheetParts.First().Worksheet.GetFirstChild<SheetData>()!.FirstChild!;
+
+            Assert.Equal(string.Empty, foo.LookupNamespace(string.Empty));
+        }
+
+        [Fact]
+        public void LeafElementContentWithoutNamespaceIsPreserved()
+        {
+            const string Input = $@"<worksheet xmlns=""{SpreadsheetNs}""><sheetFormatPr defaultRowHeight=""15""><foo xmlns="""" /></sheetFormatPr><sheetData /></worksheet>";
+
+            var xml = RoundTrip(Input, new XmlNamespacePrefixSettings { PreserveLoadedDefaultNamespace = true });
+
+            Assert.Equal(Input, xml);
+        }
+
         private static MemoryStream CreatePackage(string worksheetXml)
         {
             var stream = new MemoryStream();

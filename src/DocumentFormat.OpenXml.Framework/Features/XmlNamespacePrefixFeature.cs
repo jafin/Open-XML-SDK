@@ -26,8 +26,9 @@ namespace DocumentFormat.OpenXml.Features
 
             foreach (var item in settings.Prefixes)
             {
-                // Remapping a prefixed namespace would invalidate mc:Ignorable and mc:ProcessContent, which refer to namespaces by prefix
-                if (!string.IsNullOrEmpty(item.Value))
+                // Remapping a prefixed namespace would invalidate mc:Ignorable and mc:ProcessContent, which refer to namespaces by prefix.
+                // A null prefix is rejected too, rather than being taken to mean the default namespace.
+                if (item.Value is not { Length: 0 })
                 {
                     throw new ArgumentException(SR.Format(ExceptionMessages.NamespacePrefixNotSupported, item.Value, item.Key), nameof(settings));
                 }

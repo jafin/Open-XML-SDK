@@ -194,6 +194,8 @@ namespace DocumentFormat.OpenXml
                 throw new ArgumentNullException(nameof(xmlWriter));
             }
 
+            ParseIfDefaultNamespaceInScope(xmlWriter);
+
             if (XmlParsed)
             {
                 var prefix = Prefix;

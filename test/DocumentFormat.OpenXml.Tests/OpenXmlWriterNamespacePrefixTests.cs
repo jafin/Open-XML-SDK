@@ -320,12 +320,91 @@ namespace DocumentFormat.OpenXml.Tests
             Assert.Equal($@"<x:worksheet xmlns:x=""{SpreadsheetNs}""><x:sheetData /><shape xmlns=""{VmlNs}"" /></x:worksheet>", xml);
         }
 
+        [Fact]
+        public void CopyingRowsAsElementsWithoutSettingsKeepsPrefixes()
+        {
+            var xml = CopyExcelStyleSheet(settings: null, loadRows: true);
+
+            Assert.Contains("<x:sheetData><x:row r=\"1\"><x:c r=\"A1\"><x:v>1</x:v></x:c></x:row></x:sheetData>", xml);
+        }
+
+        [Fact]
+        public void CopyingRowsAsElementsWithSettingsUsesDefaultNamespace()
+        {
+            var xml = CopyExcelStyleSheet(new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true }, loadRows: true);
+
+            Assert.Contains("<sheetData><row r=\"1\"><c r=\"A1\"><v>1</v></c></row></sheetData>", xml);
+        }
+
+        [Fact]
+        public void CopyingWithOnlyPreserveLoadedDefaultNamespaceKeepsPrefixes()
+        {
+            var settings = new XmlNamespacePrefixSettings { PreserveLoadedDefaultNamespace = true };
+
+            Assert.Contains("<x:sheetData><x:row r=\"1\">", CopyExcelStyleSheet(settings));
+            Assert.Contains("<x:sheetData><x:row r=\"1\">", CopyExcelStyleSheet(settings, loadRows: true));
+        }
+
+        [Fact]
+        public void AttributeRedeclaringDefaultNamespaceUnderDeclaredDefaultKeepsPrefix()
+        {
+            var worksheet = new Worksheet();
+            worksheet.AddNamespaceDeclaration(string.Empty, SpreadsheetNs);
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteStartElement(worksheet);
+                writer.WriteStartElement(new SheetData(), new[] { new OpenXmlAttribute(string.Empty, "xmlns", "http://www.w3.org/2000/xmlns/", "urn:other") });
+                writer.WriteElement(new Row());
+                writer.WriteEndElement();
+                writer.WriteEndElement();
+            }
+
+            Assert.Equal($@"<worksheet xmlns=""{SpreadsheetNs}""><x:sheetData xmlns=""urn:other"" xmlns:x=""{SpreadsheetNs}""><x:row /></x:sheetData></worksheet>", Read(stream));
+        }
+
+        [Fact]
+        public void UnparsedElementUnderDefaultNamespaceKeepsChildrenOutOfDefaultNamespace()
+        {
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream, new OpenXmlPartWriterSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true } }))
+            {
+                writer.WriteStartElement(new Worksheet());
+                writer.WriteStartElement(new SheetData());
+                writer.WriteElement(new Row($@"<x:row xmlns:x=""{SpreadsheetNs}""><foo /></x:row>"));
+                writer.WriteEndElement();
+                writer.WriteEndElement();
+            }
+
+            Assert.Contains(@"<foo xmlns="""">", Read(stream));
+        }
+
+        [Fact]
+        public void WriteElementUnderDefaultNamespaceMatchesWriteTo()
+        {
+            var body = new W.Body(new W.Paragraph(new W.Run(new W.Text(string.Empty) { Space = SpaceProcessingModeValues.Preserve })));
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream, new OpenXmlPartWriterSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true } }))
+            {
+                writer.WriteStartElement(new W.Document());
+                writer.WriteElement(body);
+                writer.WriteEndElement();
+            }
+
+            Assert.Contains(@"<t xml:space=""preserve""></t>", Read(stream));
+        }
+
         private const string VmlNs = "urn:schemas-microsoft-com:vml";
 
-        private static string CopyExcelStyleSheet(XmlNamespacePrefixSettings settings)
-            => Copy($@"<worksheet xmlns=""{SpreadsheetNs}"" xmlns:r=""http://schemas.openxmlformats.org/officeDocument/2006/relationships""><sheetData><row r=""1""><c r=""A1""><v>1</v></c></row></sheetData></worksheet>", settings);
+        private static string CopyExcelStyleSheet(XmlNamespacePrefixSettings settings, bool loadRows = false)
+            => Copy($@"<worksheet xmlns=""{SpreadsheetNs}"" xmlns:r=""http://schemas.openxmlformats.org/officeDocument/2006/relationships""><sheetData><row r=""1""><c r=""A1""><v>1</v></c></row></sheetData></worksheet>", settings, loadRows);
 
-        private static string Copy(string sourceXml, XmlNamespacePrefixSettings settings)
+        private static string Copy(string sourceXml, XmlNamespacePrefixSettings settings, bool loadRows = false)
         {
             using var package = new MemoryStream();
             using var doc = SpreadsheetDocument.Create(package, SpreadsheetDocumentType.Workbook);
@@ -343,7 +422,12 @@ namespace DocumentFormat.OpenXml.Tests
             {
                 while (reader.Read())
                 {
-                    if (reader.IsStartElement)
+                    if (loadRows && reader.IsStartElement && reader.ElementType == typeof(Row))
+                    {
+                        // the common streaming pattern: copy the start tags, and load and write each row as an element
+                        writer.WriteElement(reader.LoadCurrentElement()!);
+                    }
+                    else if (reader.IsStartElement)
                     {
                         writer.WriteStartElement(reader);
 

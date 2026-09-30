@@ -145,5 +145,53 @@ namespace DocumentFormat.OpenXml.Tests
 
             Assert.Equal($@"<?xml version=""1.0"" encoding=""utf-8""?><worksheet xmlns=""{SpreadsheetNs}"" />", Encoding.UTF8.GetString(stream.ToArray()).TrimStart('﻿'));
         }
+
+        [Fact]
+        public void InnerXmlWithBuiltInPrefixIsParsedUnderDefaultDeclaration()
+        {
+            var sheetData = new SheetData();
+            var worksheet = new Worksheet(sheetData);
+            worksheet.AddNamespaceDeclaration(string.Empty, SpreadsheetNs);
+
+            sheetData.InnerXml = @"<x:row r=""1"" />";
+
+            Assert.Equal(1U, Assert.IsType<Row>(sheetData.FirstChild).RowIndex!.Value);
+        }
+
+        [Fact]
+        public void UnprefixedInnerXmlStaysWithoutNamespaceUnderDefaultDeclaration()
+        {
+            var sheetData = new SheetData();
+            var worksheet = new Worksheet(sheetData);
+            worksheet.AddNamespaceDeclaration(string.Empty, SpreadsheetNs);
+
+            sheetData.InnerXml = "<foo />";
+
+            Assert.Equal(string.Empty, sheetData.FirstChild!.NamespaceUri);
+        }
+
+        [Fact]
+        public void WriteToXmlWriterWithDefaultNamespaceInScopeKeepsBuiltInPrefix()
+        {
+            var sb = new StringBuilder();
+            using (var writer = System.Xml.XmlWriter.Create(sb, new System.Xml.XmlWriterSettings { OmitXmlDeclaration = true }))
+            {
+                writer.WriteStartElement(string.Empty, "sheetData", SpreadsheetNs);
+                new Row().WriteTo(writer);
+                writer.WriteEndElement();
+            }
+
+            Assert.Equal($@"<sheetData xmlns=""{SpreadsheetNs}""><x:row xmlns:x=""{SpreadsheetNs}"" /></sheetData>", sb.ToString());
+        }
+
+        [Fact]
+        public void UnparsedElementUnderDefaultDeclarationKeepsChildrenOutOfDefaultNamespace()
+        {
+            // not a part root, which parses its descendants when it writes their namespace declarations
+            var sheetData = new SheetData(new Row($@"<x:row xmlns:x=""{SpreadsheetNs}""><foo /></x:row>"));
+            sheetData.AddNamespaceDeclaration(string.Empty, SpreadsheetNs);
+
+            Assert.Contains(@"<foo xmlns="""" />", sheetData.OuterXml);
+        }
     }
 }

@@ -108,7 +108,7 @@ public static class CloneableExtensions
         where TPackage : OpenXmlPackage
         => openXmlPackage.Features.GetRequired<IPackageFactoryFeature<TPackage>>()
             .Create()
-            .UseSettings(openSettings)
+            .UseSettings(ForClone(openSettings, inheritNamespacePrefixes))
             .Build()
             .Open(stream, PackageOpenMode.Create)
             .CopyFrom(openXmlPackage, inheritNamespacePrefixes)
@@ -198,7 +198,7 @@ public static class CloneableExtensions
         where TPackage : OpenXmlPackage
         => openXmlPackage.Features.GetRequired<IPackageFactoryFeature<TPackage>>()
               .Create()
-              .UseSettings(openSettings ?? new())
+              .UseSettings(ForClone(openSettings ?? new(), inheritNamespacePrefixes))
               .Build()
               .Open(path, PackageOpenMode.Create)
               .CopyFrom(openXmlPackage, inheritNamespacePrefixes)
@@ -256,7 +256,7 @@ public static class CloneableExtensions
         where TPackage : OpenXmlPackage
         => openXmlPackage.Features.GetRequired<IPackageFactoryFeature<TPackage>>()
               .Create()
-              .UseSettings(openSettings ?? new())
+              .UseSettings(ForClone(openSettings ?? new(), inheritNamespacePrefixes))
               .Build()
               .Open(package)
               .CopyFrom(openXmlPackage, inheritNamespacePrefixes);
@@ -282,16 +282,19 @@ public static class CloneableExtensions
                 ? source.Features.Get<IXmlNamespacePrefixFeature>()
                 : destination.Features.Get<IXmlNamespacePrefixFeature>();
 
-            destination.OpenSettings = new(source.OpenSettings);
-
-            // the OpenSettings setter replaces the feature, so set the one decided above
-            destination.Features.Set<IXmlNamespacePrefixFeature>(namespacePrefixes);
+            // the feature is not rebuilt from the source's OpenSettings, whose namespace prefix settings may have been changed since
+            destination.SetOpenSettings(new(source.OpenSettings), namespacePrefixes);
 
             destination.Features.Set<IPartUriFeature>(existing);
 
             return destination;
         }
     }
+
+    // a clone that keeps the source's namespace prefix settings takes them from its feature, so the ones in its OpenSettings, which
+    // may have been changed since the source was opened, are neither validated nor applied
+    private static OpenSettings ForClone(OpenSettings openSettings, bool inheritNamespacePrefixes)
+        => inheritNamespacePrefixes && openSettings.NamespacePrefixes is not null ? new(openSettings) { NamespacePrefixes = null } : openSettings;
 
     internal static TPackage Reload<TPackage>(this TPackage openXmlPackage, bool? isEditable = default)
         where TPackage : OpenXmlPackage

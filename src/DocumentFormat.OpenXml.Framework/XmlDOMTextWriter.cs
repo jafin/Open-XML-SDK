@@ -56,6 +56,19 @@ namespace DocumentFormat.OpenXml
         }
 
         /// <summary>
+        /// Prepares a writer created with <see cref="XmlDOMTextWriter(XmlWriter, string)"/> for another write, starting inside an
+        /// element whose default namespace is <paramref name="defaultNamespace"/>.
+        /// </summary>
+        internal void Reset(string defaultNamespace, bool? useDefaultNamespaceForRoot)
+        {
+            _defaultNamespaces.Clear();
+            _defaultNamespaces.Push(defaultNamespace);
+            _pendingDefaultNamespace = null;
+            UseDefaultNamespaceForRoot = useDefaultNamespaceForRoot;
+            IsWritingRootInDefaultNamespace = false;
+        }
+
+        /// <summary>
         /// Gets the default namespace in scope for the element currently being written.
         /// </summary>
         internal string DefaultNamespace => _defaultNamespaces.Count == 0 ? string.Empty : _defaultNamespaces.Peek();
@@ -206,6 +219,11 @@ namespace DocumentFormat.OpenXml
                 {
                     _pendingDefaultNamespace += text;
                 }
+            }
+            else if (!_ownsWriter)
+            {
+                // a writer that wraps another one must not change its output, e.g. <t></t> into <t />
+                _writer.WriteString(text);
             }
         }
 

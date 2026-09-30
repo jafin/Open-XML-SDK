@@ -37,13 +37,18 @@ namespace DocumentFormat.OpenXml.Packaging
         internal OpenSettings OpenSettings
         {
             get => _settings ??= new();
-            set
-            {
-                _settings = value;
+            set => _settings = value;
+        }
 
-                // replace any feature installed by earlier settings, so the settings in effect always decide
-                Features.Set<IXmlNamespacePrefixFeature>(value?.NamespacePrefixes is { } namespacePrefixes ? new XmlNamespacePrefixFeature(namespacePrefixes) : null);
-            }
+        /// <summary>
+        /// Sets the <see cref="OpenSettings"/> together with the namespace prefix feature built from them, replacing any feature
+        /// installed by earlier settings so the settings in effect always decide. The feature is passed in, as the settings'
+        /// namespace prefix settings may have been changed since it was built.
+        /// </summary>
+        internal void SetOpenSettings(OpenSettings settings, IXmlNamespacePrefixFeature? namespacePrefixes)
+        {
+            _settings = settings;
+            Features.Set(namespacePrefixes);
         }
 
         /// <summary>
