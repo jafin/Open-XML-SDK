@@ -52,6 +52,49 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void PresetDeclaresBuiltInPrefixForAttributeOfUnparsedElement()
+        {
+            using var stream = new MemoryStream();
+            using var doc = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document).UseDefaultNamespaceForRoot();
+            var mainPart = doc.AddMainDocumentPart();
+            mainPart.Document = new W.Document(new W.Body(new W.Paragraph($@"<w:p xmlns:w=""{WordNs}"" w:rsidR=""00A1"" />")));
+
+            // the paragraph keeps the declaration its own XML makes
+            Assert.StartsWith($@"{XmlDeclaration}<document xmlns:w=""{WordNs}"" xmlns=""{WordNs}"">", SaveAndRead(mainPart));
+        }
+
+        [Fact]
+        public void WriteToAnyXmlWriterOfElementInDefaultNamespaceMatchesOuterXml()
+        {
+            using var stream = new MemoryStream();
+            using var doc = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document).UseDefaultNamespaceForRoot();
+            var paragraph = new W.Paragraph(new W.Run(new W.Text("a")), new W.Run(new W.Text("b")));
+            doc.AddMainDocumentPart().Document = new W.Document(new W.Body(paragraph));
+
+            var sb = new System.Text.StringBuilder();
+            using (var writer = System.Xml.XmlWriter.Create(sb, new System.Xml.XmlWriterSettings { OmitXmlDeclaration = true }))
+            {
+                paragraph.WriteTo(writer);
+            }
+
+            Assert.Equal($@"<p xmlns=""{WordNs}""><r><t>a</t></r><r><t>b</t></r></p>", sb.ToString());
+            Assert.Equal(paragraph.OuterXml, sb.ToString());
+        }
+
+        [Fact]
+        public void ClonedPackageKeepsPartSettings()
+        {
+            using var stream = GetStream(TestFiles.Spreadsheet, true);
+            using var doc = SpreadsheetDocument.Open(stream, true);
+            doc.WorkbookPart!.WorksheetParts.First().UseDefaultNamespaceForRoot();
+
+            using var clone = doc.Clone();
+
+            Assert.StartsWith("<worksheet ", StripDeclaration(SaveAndRead(clone.WorkbookPart!.WorksheetParts.First())));
+            Assert.StartsWith("<x:workbook ", StripDeclaration(SaveAndRead(clone.WorkbookPart!)));
+        }
+
+        [Fact]
         public void PresetWritesPresentationInDefaultNamespace()
         {
             using var stream = new MemoryStream();

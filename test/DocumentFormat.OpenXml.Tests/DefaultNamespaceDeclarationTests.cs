@@ -75,6 +75,23 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void WriteToAnyXmlWriterOfUnknownElementUsesDefaultNamespaceForChildren()
+        {
+            var unknown = new OpenXmlUnknownElement("u", "wrap", "urn:u");
+            unknown.AddNamespaceDeclaration(string.Empty, WordNs);
+            unknown.AppendChild(new Paragraph(new ParagraphProperties()));
+
+            var sb = new StringBuilder();
+            using (var writer = System.Xml.XmlWriter.Create(sb, new System.Xml.XmlWriterSettings { OmitXmlDeclaration = true }))
+            {
+                unknown.WriteTo(writer);
+            }
+
+            Assert.Contains("<p><pPr /></p>", sb.ToString());
+            Assert.Equal(unknown.OuterXml, sb.ToString());
+        }
+
+        [Fact]
         public void ElementRedeclaringDefaultNamespaceGetsGeneratedPrefixWhenNoneIsKnown()
         {
             var element = new OpenXmlUnknownElement(string.Empty, "item", "urn:custom");

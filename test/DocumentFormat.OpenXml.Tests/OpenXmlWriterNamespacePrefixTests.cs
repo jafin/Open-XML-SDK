@@ -337,6 +337,16 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void CopyingWithPresetLeavesNestedDefaultNamespaceAlone()
+        {
+            const string Nested = @"<foo xmlns=""urn:x""><x:bar xmlns:x=""urn:x"" /></foo>";
+
+            var xml = Copy($@"<worksheet xmlns=""{SpreadsheetNs}""><extLst><ext uri=""{{00000000-0000-0000-0000-000000000000}}"">{Nested}</ext></extLst></worksheet>", new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true });
+
+            Assert.Contains(Nested, xml);
+        }
+
+        [Fact]
         public void CopyingWithOnlyPreserveLoadedDefaultNamespaceKeepsPrefixes()
         {
             var settings = new XmlNamespacePrefixSettings { PreserveLoadedDefaultNamespace = true };

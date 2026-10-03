@@ -198,6 +198,13 @@ namespace DocumentFormat.OpenXml
 
             if (XmlParsed)
             {
+                if (NeedsTrackingWriter(xmlWriter))
+                {
+                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty);
+                    WriteTo(trackingWriter);
+                    return;
+                }
+
                 var prefix = Prefix;
 
                 // without a prefix the element would be in the default namespace, which it redefines to another uri

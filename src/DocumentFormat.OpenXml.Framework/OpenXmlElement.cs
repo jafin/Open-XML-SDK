@@ -1088,9 +1088,7 @@ namespace DocumentFormat.OpenXml
 
             if (XmlParsed)
             {
-                // other writers cannot report the default namespace in scope, which is needed to write the content without prefixes.
-                // The element declares its own default namespace, so the one outside it is never used.
-                if (xmlWriter is not XmlDOMTextWriter && LookupNamespaceLocal(string.Empty) is not null)
+                if (NeedsTrackingWriter(xmlWriter))
                 {
                     using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty);
                     WriteTo(trackingWriter);
@@ -1540,6 +1538,27 @@ namespace DocumentFormat.OpenXml
             }
         }
 
+        /// <summary>
+        /// Gets a value indicating whether the current element is written in, or declares, a default namespace that its content needs
+        /// to be written without prefixes. Other writers cannot report the default namespace in scope, so they are then wrapped in a
+        /// tracking <see cref="XmlDOMTextWriter"/>. The default namespace outside the element is never used: the element either declares
+        /// its own, or is the first element written, with its default namespace taken from the tree.
+        /// </summary>
+        private protected bool NeedsTrackingWriter(XmlWriter xmlWriter)
+        {
+            if (xmlWriter is XmlDOMTextWriter)
+            {
+                return false;
+            }
+
+            if (LookupNamespaceLocal(string.Empty) is not null)
+            {
+                return true;
+            }
+
+            return NamespaceUri.Length > 0 && Parent is not null && IsTopOfWrite(xmlWriter) && LookupElementPrefix(NamespaceUri, includeConfiguredDefault: true) is { Length: 0 };
+        }
+
         private static bool IsTopOfWrite(XmlWriter xmlWriter)
             => xmlWriter is XmlDOMTextWriter domWriter ? domWriter.IsAtTopLevel : xmlWriter.WriteState is WriteState.Start or WriteState.Prolog;
 
@@ -1549,15 +1568,13 @@ namespace DocumentFormat.OpenXml
         internal string GeneratePrefix() => NamespacePrefixGenerator.Generate(prefix => LookupNamespaceLocal(prefix) is not null);
 
         /// <summary>
-        /// Gets a value indicating whether the current element has an attribute in <paramref name="namespaceUri"/>.
-        /// Elements that have not been parsed are skipped, as they are written from their original XML.
+        /// Gets a value indicating whether the current element has an attribute in <paramref name="namespaceUri"/>. It is only
+        /// called for a part root written in the default namespace, which parses its content, so an element that has not been
+        /// parsed is parsed first.
         /// </summary>
         internal bool HasAttributeInNamespace(string namespaceUri)
         {
-            if (!XmlParsed)
-            {
-                return false;
-            }
+            MakeSureParsed();
 
             if (ExtendedAttributesField is not null)
             {

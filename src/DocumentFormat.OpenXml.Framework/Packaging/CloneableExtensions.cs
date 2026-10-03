@@ -4,6 +4,7 @@
 using DocumentFormat.OpenXml.Builder;
 using DocumentFormat.OpenXml.Features;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Packaging;
 
@@ -285,9 +286,44 @@ public static class CloneableExtensions
             // the feature is not rebuilt from the source's OpenSettings, whose namespace prefix settings may have been changed since
             destination.SetOpenSettings(new(source.OpenSettings), namespacePrefixes);
 
+            if (inheritNamespacePrefixes)
+            {
+                CopyPartNamespacePrefixes(source, destination);
+            }
+
             destination.Features.Set<IPartUriFeature>(existing);
 
             return destination;
+        }
+    }
+
+    // namespace prefix settings applied to a single part override the package's, so carry them over to the matching part of the clone
+    private static void CopyPartNamespacePrefixes(OpenXmlPackage source, OpenXmlPackage destination)
+    {
+        var packageFeature = source.Features.Get<IXmlNamespacePrefixFeature>();
+        Dictionary<Uri, IXmlNamespacePrefixFeature?>? partFeatures = null;
+
+        foreach (var part in source.GetAllParts())
+        {
+            var feature = part.Features.Get<IXmlNamespacePrefixFeature>();
+
+            if (!ReferenceEquals(feature, packageFeature))
+            {
+                (partFeatures ??= new())[part.Uri] = feature;
+            }
+        }
+
+        if (partFeatures is null)
+        {
+            return;
+        }
+
+        foreach (var part in destination.GetAllParts())
+        {
+            if (partFeatures.TryGetValue(part.Uri, out var feature))
+            {
+                part.Features.Set(feature);
+            }
         }
     }
 

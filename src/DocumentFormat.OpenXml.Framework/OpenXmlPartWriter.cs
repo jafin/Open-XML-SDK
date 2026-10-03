@@ -26,6 +26,9 @@ namespace DocumentFormat.OpenXml
         // the default namespace in scope for each element started by this writer
         private readonly Stack<DefaultNamespaceScope> _defaultNamespaces = new();
         private XmlDOMTextWriter? _trackingWriter;
+
+        // the namespace of the root element, the only one the settings can make the default namespace
+        private string? _rootNamespace;
         private bool _isLeafTextElementStart; // default is false
 
         // private Stack<OpenXmlElement> _elementStack;
@@ -423,7 +426,8 @@ namespace DocumentFormat.OpenXml
         // xmlns attribute (as OpenXmlPartReader does); only then may it change the prefixes that are written
         private bool IsCurrentDefaultNamespaceOptedIn => _defaultNamespaces.Count > 0 && (_defaultNamespaces.Peek().IsOptedIn || IsConfiguredDefaultNamespace(_defaultNamespaces.Peek().Uri));
 
-        private bool IsConfiguredDefaultNamespace(string namespaceUri) => namespaceUri.Length > 0 && _namespacePrefixes.IsDefaultNamespaceForRoot(namespaceUri);
+        private bool IsConfiguredDefaultNamespace(string namespaceUri)
+            => namespaceUri.Length > 0 && namespaceUri == _rootNamespace && _namespacePrefixes.IsDefaultNamespaceForRoot(namespaceUri);
 
         // the wrapper is reused, as WriteElement is called for every element of a large part
         private XmlDOMTextWriter GetTrackingWriter(string defaultNamespace, bool? useDefaultNamespaceForRoot)
@@ -519,6 +523,11 @@ namespace DocumentFormat.OpenXml
         /// <returns>The prefix to declare for the element's namespace when the root is written in the default namespace.</returns>
         private string? StartElementScope(ref string? prefix, string namespaceUri, bool elementDeclaresDefault, bool emptyPrefixFromTree, IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations, out bool skipLocalDefault)
         {
+            if (_defaultNamespaces.Count == 0)
+            {
+                _rootNamespace = namespaceUri;
+            }
+
             var localDefault = FindDefaultNamespaceDeclaration(attributes, namespaceDeclarations, out var isAttribute);
 
             if (localDefault is null && elementDeclaresDefault)
