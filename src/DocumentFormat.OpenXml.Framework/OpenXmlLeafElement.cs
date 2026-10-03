@@ -84,7 +84,7 @@ namespace DocumentFormat.OpenXml
                 Debug.Assert(xmlReader.IsStartElement());
 
                 // load inner xml into LoadedInnerXml if there are any.
-                ShadowElement = new OpenXmlUnknownElement(Prefix, LocalName, NamespaceUri)
+                ShadowElement = new OpenXmlUnknownElement(GetWrapperPrefix(), LocalName, NamespaceUri)
                 {
                     InnerXml = xmlReader.ReadInnerXml(),
                 };

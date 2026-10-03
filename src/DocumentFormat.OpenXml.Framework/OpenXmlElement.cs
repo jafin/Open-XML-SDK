@@ -336,9 +336,9 @@ namespace DocumentFormat.OpenXml
             {
                 MakeSureParsed();
 
-                var prefix = LookupPrefix(NamespaceUri);
+                var prefix = LookupElementPrefix(NamespaceUri, includeConfiguredDefault: false);
 
-                if (!prefix.IsNullOrEmpty())
+                if (prefix is not null)
                 {
                     return prefix;
                 }
@@ -733,12 +733,12 @@ namespace DocumentFormat.OpenXml
         /// <summary>
         /// Adds a namespace declaration to the current node.
         /// </summary>
-        /// <param name="prefix">The prefix.</param>
+        /// <param name="prefix">The prefix. An empty prefix declares the default namespace (<c>xmlns="uri"</c>).</param>
         /// <param name="uri">The uri.</param>
-        /// <exception cref="InvalidOperationException">Thrown if the prefix is already used in the current node.</exception>
+        /// <exception cref="InvalidOperationException">Thrown if the prefix is already used in the current node, or if a default namespace is declared on an element that has no namespace.</exception>
         public void AddNamespaceDeclaration(string prefix, string uri)
         {
-            if (string.IsNullOrEmpty(prefix))
+            if (prefix is null)
             {
                 throw new ArgumentNullException(nameof(prefix));
             }
@@ -746,6 +746,12 @@ namespace DocumentFormat.OpenXml
             if (string.IsNullOrEmpty(uri))
             {
                 throw new ArgumentNullException(nameof(uri));
+            }
+
+            // an element with no namespace cannot be written inside a default namespace it declares itself
+            if (prefix.Length == 0 && NamespaceUri.Length == 0)
+            {
+                throw new InvalidOperationException(ExceptionMessages.DefaultNamespaceOnElementWithoutNamespace);
             }
 
             MakeSureParsed();
@@ -770,10 +776,10 @@ namespace DocumentFormat.OpenXml
         /// <summary>
         /// Removes the namespace declaration for the specified prefix. Removes nothing if there is no prefix.
         /// </summary>
-        /// <param name="prefix"></param>
+        /// <param name="prefix">The prefix. An empty prefix removes the default namespace declaration.</param>
         public void RemoveNamespaceDeclaration(string prefix)
         {
-            if (string.IsNullOrEmpty(prefix))
+            if (prefix is null)
             {
                 throw new ArgumentNullException(nameof(prefix));
             }
@@ -1078,23 +1084,18 @@ namespace DocumentFormat.OpenXml
                 throw new ArgumentNullException(nameof(xmlWriter));
             }
 
+            ParseIfDefaultNamespaceInScope(xmlWriter);
+
             if (XmlParsed)
             {
-                // check the namespace mapping defined in this node first. because till now xmlWriter don't know the mapping defined in the current node.
-                var prefix = LookupPrefixLocal(NamespaceUri);
-
-                // if not defined in the current node, try the xmlWriter
-                if (string.IsNullOrEmpty(prefix))
+                if (NeedsTrackingWriter(xmlWriter))
                 {
-                    prefix = xmlWriter.LookupPrefix(NamespaceUri);
+                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty);
+                    WriteTo(trackingWriter);
+                    return;
                 }
 
-                // if xmlWriter didn't find it, it means the node is constructed by user and is not in the tree yet
-                // in this case, we use the predefined prefix
-                if (string.IsNullOrEmpty(prefix))
-                {
-                    prefix = Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
-                }
+                var prefix = GetPrefixForWrite(xmlWriter, useWriterScope: true);
 
                 xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
                 WriteAttributesTo(xmlWriter);
@@ -1452,6 +1453,153 @@ namespace DocumentFormat.OpenXml
             return ElementOrder.After;
         }
 
+        /// <summary>
+        /// Gets the prefix to write the current element with.
+        /// </summary>
+        /// <param name="xmlWriter">The writer the element is being written to.</param>
+        /// <param name="useWriterScope">Whether the namespaces already in scope on <paramref name="xmlWriter"/> may be used.</param>
+        private protected string? GetPrefixForWrite(XmlWriter xmlWriter, bool useWriterScope)
+        {
+            var namespaceUri = NamespaceUri;
+
+            // check the namespace mapping defined in this node first. because till now xmlWriter don't know the mapping defined in the current node.
+            var localDefault = LookupNamespaceLocal(string.Empty);
+
+            if (localDefault is not null && localDefault == namespaceUri)
+            {
+                return string.Empty;
+            }
+
+            var prefix = LookupPrefixLocal(namespaceUri);
+
+            if (!string.IsNullOrEmpty(prefix))
+            {
+                return prefix;
+            }
+
+            // if not defined in the current node, try the xmlWriter. The default namespace may only be used if the
+            // current node does not redefine it.
+            if (useWriterScope && namespaceUri.Length > 0)
+            {
+                var canUseDefault = localDefault is null;
+
+                if (canUseDefault && xmlWriter is XmlDOMTextWriter domWriter && domWriter.DefaultNamespace == namespaceUri)
+                {
+                    return string.Empty;
+                }
+
+                // a default namespace the writer reports is not used: it was not tracked, e.g. written directly to the writer, so it is not opted in to
+                prefix = xmlWriter.LookupPrefix(namespaceUri);
+
+                if (!string.IsNullOrEmpty(prefix))
+                {
+                    return prefix;
+                }
+
+                // the ancestors are not written to xmlWriter when only this subtree is written (i.e. OuterXml), so check
+                // whether the tree puts the node the write starts at in the default namespace. Nodes below it resolve through xmlWriter.
+                if (canUseDefault && Parent is not null && IsTopOfWrite(xmlWriter) && LookupElementPrefix(namespaceUri, includeConfiguredDefault: true) is { Length: 0 })
+                {
+                    return string.Empty;
+                }
+            }
+
+            // if xmlWriter didn't find it, it means the node is constructed by user and is not in the tree yet
+            // in this case, we use the predefined prefix
+            return Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
+        }
+
+        /// <summary>
+        /// Gets a prefix for the current element's namespace for a wrapper element whose content is parsed on its own. Unlike
+        /// <see cref="Prefix"/> it is not empty for a known element under a default namespace declaration, as the default
+        /// namespace would then apply to unprefixed content that has no namespace.
+        /// </summary>
+        private protected string GetWrapperPrefix()
+        {
+            var prefix = Prefix;
+
+            if (prefix.Length == 0 && NamespaceUri.Length > 0 && this is not OpenXmlUnknownElement && Features.GetNamespaceResolver().LookupPrefix(NamespaceUri) is { Length: > 0 } builtInPrefix)
+            {
+                return builtInPrefix;
+            }
+
+            return prefix;
+        }
+
+        /// <summary>
+        /// Parses the current element if it would otherwise be written from its original XML inside a default namespace, which
+        /// would then apply to its unprefixed content that has no namespace. The writer cannot declare <c>xmlns=""</c> inside raw XML.
+        /// </summary>
+        private protected void ParseIfDefaultNamespaceInScope(XmlWriter xmlWriter)
+        {
+            if (!XmlParsed && xmlWriter is XmlDOMTextWriter { DefaultNamespace.Length: > 0 })
+            {
+                MakeSureParsed();
+            }
+        }
+
+        /// <summary>
+        /// Gets a value indicating whether the current element is written in, or declares, a default namespace that its content needs
+        /// to be written without prefixes. Other writers cannot report the default namespace in scope, so they are then wrapped in a
+        /// tracking <see cref="XmlDOMTextWriter"/>. The default namespace outside the element is never used: the element either declares
+        /// its own, or is the first element written, with its default namespace taken from the tree.
+        /// </summary>
+        private protected bool NeedsTrackingWriter(XmlWriter xmlWriter)
+        {
+            if (xmlWriter is XmlDOMTextWriter)
+            {
+                return false;
+            }
+
+            if (LookupNamespaceLocal(string.Empty) is not null)
+            {
+                return true;
+            }
+
+            return NamespaceUri.Length > 0 && Parent is not null && IsTopOfWrite(xmlWriter) && LookupElementPrefix(NamespaceUri, includeConfiguredDefault: true) is { Length: 0 };
+        }
+
+        private static bool IsTopOfWrite(XmlWriter xmlWriter)
+            => xmlWriter is XmlDOMTextWriter domWriter ? domWriter.IsAtTopLevel : xmlWriter.WriteState is WriteState.Start or WriteState.Prolog;
+
+        /// <summary>
+        /// Generates a prefix that is not declared on the current element.
+        /// </summary>
+        internal string GeneratePrefix() => NamespacePrefixGenerator.Generate(prefix => LookupNamespaceLocal(prefix) is not null);
+
+        /// <summary>
+        /// Gets a value indicating whether the current element has an attribute in <paramref name="namespaceUri"/>. It is only
+        /// called for a part root written in the default namespace, which parses its content, so an element that has not been
+        /// parsed is parsed first.
+        /// </summary>
+        internal bool HasAttributeInNamespace(string namespaceUri)
+        {
+            MakeSureParsed();
+
+            if (ExtendedAttributesField is not null)
+            {
+                foreach (var attribute in ExtendedAttributesField)
+                {
+                    if (attribute.NamespaceUri == namespaceUri)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            foreach (var attribute in RawState.Attributes)
+            {
+                if (attribute.Value is not null && attribute.Property.QName.Namespace.Uri == namespaceUri)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private protected virtual bool ShouldWriteNamespaceDeclaration(XmlWriter xmlWriter, string prefix, string uri) => true;
+
         private protected virtual void WriteAttributesTo(XmlWriter xmlWriter)
         {
             // write the namespace declaration first, so the inner attribute will get the right prefix
@@ -1459,7 +1607,10 @@ namespace DocumentFormat.OpenXml
             {
                 foreach (var item in NamespaceDeclField)
                 {
-                    xmlWriter.WriteAttributeString(OpenXmlElementContext.XmlnsPrefix, item.Key, OpenXmlElementContext.XmlnsUri, item.Value);
+                    if (ShouldWriteNamespaceDeclaration(xmlWriter, item.Key, item.Value))
+                    {
+                        xmlWriter.WriteNamespaceDeclaration(item.Key, item.Value);
+                    }
                 }
             }
 
@@ -1580,15 +1731,17 @@ namespace DocumentFormat.OpenXml
                         }
                         else
                         {
-                            // don't add declaration for case like xmlns="global namespace uri"
-                            if (!string.IsNullOrEmpty(xmlReader.Prefix))
+                            var isDefaultNamespaceDeclaration = string.IsNullOrEmpty(xmlReader.Prefix);
+
+                            // don't add declaration for case like xmlns="global namespace uri", unless asked to preserve it
+                            if (!isDefaultNamespaceDeclaration || OpenXmlElementContext?.PreserveDefaultNamespaceDeclarations == true)
                             {
                                 if (NamespaceDeclField is null)
                                 {
                                     NamespaceDeclField = new List<KeyValuePair<string, string>>();
                                 }
 
-                                NamespaceDeclField.Add(new KeyValuePair<string, string>(xmlReader.LocalName, xmlReader.Value));
+                                NamespaceDeclField.Add(new KeyValuePair<string, string>(isDefaultNamespaceDeclaration ? string.Empty : xmlReader.LocalName, xmlReader.Value));
                             }
                         }
                     }
@@ -2513,13 +2666,60 @@ namespace DocumentFormat.OpenXml
             return null;
         }
 
+        /// <summary>
+        /// Finds the prefix an element in <paramref name="uri"/> would use in the current element scope, where an
+        /// empty string means the default namespace. Returns null if the uri is not declared in scope.
+        /// </summary>
+        /// <param name="uri">The namespace uri.</param>
+        /// <param name="includeConfiguredDefault">Whether the <see cref="IXmlNamespacePrefixFeature"/> of the part root is taken into account, which only applies when writing.</param>
+        private string? LookupElementPrefix(string uri, bool includeConfiguredDefault)
+        {
+            var defaultRedefined = false;
+
+            for (var node = this; node is not null; node = node.Parent)
+            {
+                // a default namespace configured for the part root replaces any default namespace declared on it
+                if (includeConfiguredDefault && !defaultRedefined && node is OpenXmlPartRootElement root && root.UsesConfiguredDefaultNamespace())
+                {
+                    if (root.NamespaceUri == uri)
+                    {
+                        return string.Empty;
+                    }
+
+                    defaultRedefined = true;
+                }
+
+                if (!defaultRedefined && node.LookupNamespaceLocal(string.Empty) is { } localDefault)
+                {
+                    if (localDefault == uri)
+                    {
+                        return string.Empty;
+                    }
+
+                    defaultRedefined = true;
+                }
+
+                var prefix = node.LookupPrefixLocal(uri);
+
+                if (!string.IsNullOrEmpty(prefix))
+                {
+                    return prefix;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Finds the prefix declared on the current element for <paramref name="uri"/>. A default namespace declaration is not a prefix, so it is skipped.
+        /// </summary>
         internal string? LookupPrefixLocal(string uri)
         {
             if (NamespaceDeclField is not null)
             {
                 for (var i = 0; i < NamespaceDeclField.Count; i++)
                 {
-                    if (NamespaceDeclField[i].Value == uri)
+                    if (NamespaceDeclField[i].Value == uri && NamespaceDeclField[i].Key.Length != 0)
                     {
                         return NamespaceDeclField[i].Key;
                     }
@@ -2547,7 +2747,9 @@ namespace DocumentFormat.OpenXml
             while (node is not null)
             {
                 var ret = node.LookupNamespaceLocal(prefix);
-                if (!string.IsNullOrEmpty(ret))
+
+                // an empty default namespace declaration (xmlns="") undeclares the default namespace of the ancestors
+                if (!string.IsNullOrEmpty(ret) || (ret is not null && prefix.Length == 0))
                 {
                     return ret;
                 }

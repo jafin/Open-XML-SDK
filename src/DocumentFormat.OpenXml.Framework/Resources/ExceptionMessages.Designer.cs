@@ -194,7 +194,16 @@ namespace DocumentFormat.OpenXml {
                 return ResourceManager.GetString("DataPartReferenceIsNotAllowed", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to A default namespace cannot be declared on an element that has no namespace, as the element would then be in that namespace..
+        /// </summary>
+        internal static string DefaultNamespaceOnElementWithoutNamespace {
+            get {
+                return ResourceManager.GetString("DefaultNamespaceOnElementWithoutNamespace", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to You should not validate document preprocessed based on FileFormatVersions.{0} against FileFormatVersions.{1} constraints. The preprocessing file format version is set in OpenSettings. Also check the file format version setting in the OpenXmlValidator..
         /// </summary>
@@ -558,6 +567,15 @@ namespace DocumentFormat.OpenXml {
             }
         }
         
+        /// <summary>
+        ///   Looks up a localized string similar to The prefix &quot;{0}&quot; for namespace &quot;{1}&quot; is not supported. Only an empty prefix, which writes the namespace as the default namespace, is currently supported..
+        /// </summary>
+        internal static string NamespacePrefixNotSupported {
+            get {
+                return ResourceManager.GetString("NamespacePrefixNotSupported", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Non-composite elements do not have child elements..
         /// </summary>

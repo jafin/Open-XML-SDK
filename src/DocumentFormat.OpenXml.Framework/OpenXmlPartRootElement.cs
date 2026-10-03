@@ -130,6 +130,7 @@ namespace DocumentFormat.OpenXml
             using (var xmlReader = XmlConvertingReaderFactory.Create(partStream, Features.GetNamespaceResolver(), context.XmlReaderSettings, strictRelationshipFound))
             {
                 context.MCSettings = openXmlPart.MCSettings;
+                context.PreserveDefaultNamespaceDeclarations = openXmlPart.Features.Get<IXmlNamespacePrefixFeature>()?.PreserveLoadedDefaultNamespace ?? false;
 
                 xmlReader.Read();
 
@@ -292,29 +293,55 @@ namespace DocumentFormat.OpenXml
                 throw new ArgumentNullException(nameof(xmlWriter));
             }
 
+            var useDefaultNamespace = xmlWriter is XmlDOMTextWriter { UseDefaultNamespaceForRoot: { } useDefaultNamespaceForWriter }
+                ? useDefaultNamespaceForWriter
+                : UsesConfiguredDefaultNamespace();
+
+            // raw XML is written as it is, with its own prefixes, so parse it when it is to be written in the default namespace
+            if (useDefaultNamespace && !XmlParsed)
+            {
+                MakeSureParsed();
+            }
+
             if (XmlParsed)
             {
-                // check the namespace mapping defined in this node first. because till now xmlWriter don't know the mapping defined in the current node.
-                var prefix = LookupNamespaceLocal(NamespaceUri);
-
-                // if not defined in the current node, try the xmlWriter
-                if (Parent is not null && prefix.IsNullOrEmpty())
+                // other writers cannot report the default namespace in scope, which is needed to write the content without prefixes
+                if (xmlWriter is not XmlDOMTextWriter && (useDefaultNamespace || LookupNamespaceLocal(string.Empty) is not null))
                 {
-                    prefix = xmlWriter.LookupPrefix(NamespaceUri);
+                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty) { UseDefaultNamespaceForRoot = useDefaultNamespace };
+                    WriteTo(trackingWriter);
+                    return;
                 }
 
-                // if xmlWriter didn't find it, it means the node is constructed by user and is not in the tree yet
-                // in this case, we use the predefined prefix
-                if (prefix.IsNullOrEmpty())
-                {
-                    prefix = Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
-                }
+                var prefix = useDefaultNamespace ? string.Empty : GetPrefixForWrite(xmlWriter, useWriterScope: Parent is not null);
 
                 xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
 
-                // fix bug #225919, write out all namespace into to root
-                WriteNamespaceAtributes(xmlWriter);
-                WriteAttributesTo(xmlWriter);
+                // the writer is per call, so it carries this for ShouldWriteNamespaceDeclaration rather than the element
+                if (xmlWriter is XmlDOMTextWriter domWriter)
+                {
+                    domWriter.IsWritingRootInDefaultNamespace = useDefaultNamespace;
+                }
+
+                try
+                {
+                    // fix bug #225919, write out all namespace into to root
+                    var hasAttributeInNamespace = WriteNamespaceAtributes(xmlWriter, useDefaultNamespace ? NamespaceUri : null, out var hoistedPrefixes);
+
+                    if (hasAttributeInNamespace)
+                    {
+                        WritePrefixDeclarationForAttributes(xmlWriter, hoistedPrefixes);
+                    }
+
+                    WriteAttributesTo(xmlWriter);
+                }
+                finally
+                {
+                    if (xmlWriter is XmlDOMTextWriter writer)
+                    {
+                        writer.IsWritingRootInDefaultNamespace = false;
+                    }
+                }
 
                 if (HasChildren || !string.IsNullOrEmpty(InnerText))
                 {
@@ -332,39 +359,102 @@ namespace DocumentFormat.OpenXml
             }
         }
 
-        private void WriteNamespaceAtributes(XmlWriter xmlWrite)
-        {
-            if (WriteAllNamespaceOnRoot)
-            {
-                var namespaces = new Dictionary<string, string>();
+        /// <summary>
+        /// Gets a value indicating whether the <see cref="IXmlNamespacePrefixFeature"/> in effect writes this root's namespace as the default namespace.
+        /// </summary>
+        internal bool UsesConfiguredDefaultNamespace()
+            => Features.Get<IXmlNamespacePrefixFeature>().IsDefaultNamespaceForRoot(NamespaceUri);
 
-                foreach (OpenXmlElement element in Descendants())
+        // a default namespace declared on the root for another namespace is replaced when the root is written in the default namespace
+        private protected override bool ShouldWriteNamespaceDeclaration(XmlWriter xmlWriter, string prefix, string uri)
+            => prefix.Length != 0 || uri == NamespaceUri || xmlWriter is not XmlDOMTextWriter { IsWritingRootInDefaultNamespace: true };
+
+        /// <summary>
+        /// A default namespace never applies to attributes, so when the root's namespace is written as the default namespace and an
+        /// attribute in it exists, declare its built-in prefix as well. Otherwise it would be declared on every element with such an attribute.
+        /// </summary>
+        /// <param name="xmlWriter">The writer.</param>
+        /// <param name="hoistedPrefixes">The prefixes of descendant declarations already written on the root.</param>
+        private void WritePrefixDeclarationForAttributes(XmlWriter xmlWriter, List<string>? hoistedPrefixes)
+        {
+            var namespaceUri = NamespaceUri;
+
+            if (NamespaceDeclField is not null)
+            {
+                foreach (var item in NamespaceDeclField)
                 {
-                    if (element.NamespaceDeclField is not null)
+                    if (item.Key.Length != 0 && item.Value == namespaceUri)
                     {
-                        foreach (var item in element.NamespaceDeclField)
-                        {
-                            if (!namespaces.ContainsKey(item.Key))
-                            {
-                                namespaces.Add(item.Key, item.Value);
-                            }
-                        }
+                        return;
                     }
                 }
+            }
 
-                foreach (var namespacePair in namespaces)
+            if (!string.IsNullOrEmpty(xmlWriter.LookupPrefix(namespaceUri)))
+            {
+                return;
+            }
+
+            var prefix = Features.GetNamespaceResolver().LookupPrefix(namespaceUri);
+
+            if (string.IsNullOrEmpty(prefix) || LookupNamespaceLocal(prefix) is not null || (hoistedPrefixes is not null && hoistedPrefixes.Contains(prefix)))
+            {
+                return;
+            }
+
+            xmlWriter.WriteNamespaceDeclaration(prefix, namespaceUri);
+        }
+
+        /// <summary>
+        /// Writes the namespace declarations of the descendants on the root, and checks in the same pass whether an attribute in
+        /// <paramref name="attributeNamespace"/> exists in the subtree.
+        /// </summary>
+        /// <returns><c>true</c> if <paramref name="attributeNamespace"/> is not null and an attribute in it exists.</returns>
+        private bool WriteNamespaceAtributes(XmlWriter xmlWrite, string? attributeNamespace, out List<string>? hoistedPrefixes)
+        {
+            hoistedPrefixes = null;
+            var hasAttributeInNamespace = attributeNamespace is not null && HasAttributeInNamespace(attributeNamespace);
+            var namespaces = new Dictionary<string, string>();
+
+            foreach (OpenXmlElement element in Descendants())
+            {
+                if (attributeNamespace is not null && !hasAttributeInNamespace)
                 {
-                    if (!namespacePair.Key.IsNullOrEmpty())
+                    hasAttributeInNamespace = element.HasAttributeInNamespace(attributeNamespace);
+                }
+
+                if (element.NamespaceDeclField is not null)
+                {
+                    foreach (var item in element.NamespaceDeclField)
                     {
-                        if (NamespaceDeclField is not null &&
-                            string.IsNullOrEmpty(LookupPrefixLocal(namespacePair.Value)) &&
-                            string.IsNullOrEmpty(LookupNamespaceLocal(namespacePair.Key)))
+                        if (!namespaces.ContainsKey(item.Key))
                         {
-                            xmlWrite.WriteAttributeString(OpenXmlElementContext.XmlnsPrefix, namespacePair.Key, OpenXmlElementContext.XmlnsUri, namespacePair.Value);
+                            namespaces.Add(item.Key, item.Value);
                         }
                     }
                 }
             }
+
+            if (!WriteAllNamespaceOnRoot)
+            {
+                return hasAttributeInNamespace;
+            }
+
+            foreach (var namespacePair in namespaces)
+            {
+                if (!namespacePair.Key.IsNullOrEmpty())
+                {
+                    if (NamespaceDeclField is not null &&
+                        string.IsNullOrEmpty(LookupPrefixLocal(namespacePair.Value)) &&
+                        string.IsNullOrEmpty(LookupNamespaceLocal(namespacePair.Key)))
+                    {
+                        xmlWrite.WriteAttributeString(OpenXmlElementContext.XmlnsPrefix, namespacePair.Key, OpenXmlElementContext.XmlnsUri, namespacePair.Value);
+                        (hoistedPrefixes ??= new()).Add(namespacePair.Key);
+                    }
+                }
+            }
+
+            return hasAttributeInNamespace;
         }
 
         /// <summary>

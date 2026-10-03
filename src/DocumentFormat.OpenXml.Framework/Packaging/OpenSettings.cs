@@ -32,6 +32,11 @@ namespace DocumentFormat.OpenXml.Packaging
             MarkupCompatibilityProcessSettings.TargetFileFormatVersions = other.MarkupCompatibilityProcessSettings.TargetFileFormatVersions;
             MaxCharactersInPart = other.MaxCharactersInPart;
             CompatibilityLevel = other.CompatibilityLevel;
+
+            if (other.NamespacePrefixes is not null)
+            {
+                NamespacePrefixes = new XmlNamespacePrefixSettings(other.NamespacePrefixes);
+            }
         }
 
         /// <summary>
@@ -74,5 +79,14 @@ namespace DocumentFormat.OpenXml.Packaging
         /// This property allows you to mitigate denial of service attacks where the attacker submits a package with an extremely large Open XML part. By limiting the size of the part, you can detect the attack and recover reliably.
         /// </remarks>
         public long MaxCharactersInPart { get; set; }
+
+        /// <summary>
+        /// Gets or sets the settings that control which namespace prefixes are used when part XML is written.
+        /// When <c>null</c> (the default), the built-in prefixes are used.
+        /// </summary>
+        /// <remarks>
+        /// The settings are applied when the document is opened; use <see cref="XmlNamespacePrefixExtensions.UseNamespacePrefixes{TContainer}(TContainer, XmlNamespacePrefixSettings)"/> to change them afterwards.
+        /// </remarks>
+        public XmlNamespacePrefixSettings? NamespacePrefixes { get; set; }
     }
 }

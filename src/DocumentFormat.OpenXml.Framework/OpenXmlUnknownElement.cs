@@ -194,9 +194,26 @@ namespace DocumentFormat.OpenXml
                 throw new ArgumentNullException(nameof(xmlWriter));
             }
 
+            ParseIfDefaultNamespaceInScope(xmlWriter);
+
             if (XmlParsed)
             {
-                xmlWriter.WriteStartElement(Prefix, LocalName, NamespaceUri);
+                if (NeedsTrackingWriter(xmlWriter))
+                {
+                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty);
+                    WriteTo(trackingWriter);
+                    return;
+                }
+
+                var prefix = Prefix;
+
+                // without a prefix the element would be in the default namespace, which it redefines to another uri
+                if (string.IsNullOrEmpty(prefix) && NamespaceUri.Length > 0 && LookupNamespaceLocal(string.Empty) is { } localDefault && localDefault != NamespaceUri)
+                {
+                    prefix = GeneratePrefix();
+                }
+
+                xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
                 WriteAttributesTo(xmlWriter);
                 WriteContentTo(xmlWriter);
                 xmlWriter.WriteEndElement();

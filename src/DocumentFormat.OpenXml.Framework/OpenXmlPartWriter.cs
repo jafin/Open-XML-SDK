@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using DocumentFormat.OpenXml.Features;
 using DocumentFormat.OpenXml.Packaging;
 using System;
 using System.Collections.Generic;
@@ -20,6 +21,14 @@ namespace DocumentFormat.OpenXml
     public class OpenXmlPartWriter : OpenXmlWriter
     {
         private readonly XmlWriter _xmlWriter;
+        private readonly IXmlNamespacePrefixFeature? _namespacePrefixes;
+
+        // the default namespace in scope for each element started by this writer
+        private readonly Stack<DefaultNamespaceScope> _defaultNamespaces = new();
+        private XmlDOMTextWriter? _trackingWriter;
+
+        // the namespace of the root element, the only one the settings can make the default namespace
+        private string? _rootNamespace;
         private bool _isLeafTextElementStart; // default is false
 
         // private Stack<OpenXmlElement> _elementStack;
@@ -58,6 +67,7 @@ namespace DocumentFormat.OpenXml
             };
 
             _xmlWriter = XmlWriter.Create(partStream, settings);
+            _namespacePrefixes = openXmlPart.Features.Get<IXmlNamespacePrefixFeature>();
         }
 
         /// <summary>
@@ -76,6 +86,11 @@ namespace DocumentFormat.OpenXml
             {
                 throw new ArgumentNullException(nameof(settings));
             }
+
+            // validate the settings before the part is truncated
+            _namespacePrefixes = settings.NamespacePrefixes is { } namespacePrefixes
+                ? new XmlNamespacePrefixFeature(namespacePrefixes)
+                : openXmlPart.Features.Get<IXmlNamespacePrefixFeature>();
 
             var partStream = openXmlPart.GetStream(FileMode.Create);
             XmlWriterSettings xmlWriterSettings = new()
@@ -141,6 +156,9 @@ namespace DocumentFormat.OpenXml
             {
                 throw new ArgumentNullException(nameof(settings));
             }
+
+            // validate the settings before the writer takes ownership of the stream
+            _namespacePrefixes = settings.NamespacePrefixes is { } namespacePrefixes ? new XmlNamespacePrefixFeature(namespacePrefixes) : null;
 
             XmlWriterSettings xmlWriterSettings = new()
             {
@@ -232,24 +250,7 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            _xmlWriter.WriteStartElement(elementReader.Prefix, elementReader.LocalName, elementReader.NamespaceUri);
-
-            if (namespaceDeclarations is not null)
-            {
-                foreach (var item in namespaceDeclarations)
-                {
-                    _xmlWriter.WriteAttributeString(OpenXmlElementContext.XmlnsPrefix, item.Key, OpenXmlElementContext.XmlnsUri, item.Value);
-                }
-            }
-
-            if (attributes is not null)
-            {
-                // write attributes
-                foreach (var attribute in attributes)
-                {
-                    _xmlWriter.WriteAttributeString(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value);
-                }
-            }
+            WriteStartTag(elementReader.Prefix, elementReader.LocalName, elementReader.NamespaceUri, elementDeclaresDefault: false, emptyPrefixFromTree: false, attributes, namespaceDeclarations);
 
             if (elementReader.ElementType.IsSubclassOf(typeof(OpenXmlLeafTextElement)))
             {
@@ -279,16 +280,7 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            _xmlWriter.WriteStartElement(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri);
-
-            if (elementObject.HasAttributes)
-            {
-                // write attributes
-                foreach (var attribute in elementObject.GetAttributes())
-                {
-                    _xmlWriter.WriteAttributeString(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value);
-                }
-            }
+            WriteStartTag(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, DeclaresOwnDefaultNamespace(elementObject), IsEmptyPrefixFromTree(elementObject), elementObject.HasAttributes ? elementObject.GetAttributes() : null, namespaceDeclarations: null);
 
             if (elementObject is OpenXmlLeafTextElement)
             {
@@ -335,24 +327,7 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            _xmlWriter.WriteStartElement(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri);
-
-            if (namespaceDeclarations is not null)
-            {
-                foreach (var item in namespaceDeclarations)
-                {
-                    _xmlWriter.WriteAttributeString(OpenXmlElementContext.XmlnsPrefix, item.Key, OpenXmlElementContext.XmlnsUri, item.Value);
-                }
-            }
-
-            if (attributes is not null)
-            {
-                // write attributes
-                foreach (var attribute in attributes)
-                {
-                    _xmlWriter.WriteAttributeString(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value);
-                }
-            }
+            WriteStartTag(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, DeclaresOwnDefaultNamespace(elementObject), IsEmptyPrefixFromTree(elementObject), attributes, namespaceDeclarations);
 
             if (elementObject is OpenXmlLeafTextElement)
             {
@@ -372,6 +347,7 @@ namespace DocumentFormat.OpenXml
             ThrowIfObjectDisposed();
 
             _xmlWriter.WriteEndElement();
+            PopDefaultNamespace();
 
             _isLeafTextElementStart = false;
         }
@@ -409,7 +385,20 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            elementObject.WriteTo(_xmlWriter);
+            if (_defaultNamespaces.Count == 0 && elementObject is OpenXmlPartRootElement root && (_namespacePrefixes is not null || root.UsesConfiguredDefaultNamespace()))
+            {
+                // this writer's settings decide whether the root is written in the default namespace, not the settings of the part the element belongs to
+                elementObject.WriteTo(GetTrackingWriter(string.Empty, _namespacePrefixes.IsDefaultNamespaceForRoot(elementObject.NamespaceUri)));
+            }
+            else if (CurrentDefaultNamespace.Length > 0 && IsCurrentDefaultNamespaceOptedIn)
+            {
+                // track the default namespace so the subtree is written without prefixes where possible
+                elementObject.WriteTo(GetTrackingWriter(CurrentDefaultNamespace, useDefaultNamespaceForRoot: null));
+            }
+            else
+            {
+                elementObject.WriteTo(_xmlWriter);
+            }
 
             _isLeafTextElementStart = false;
         }
@@ -426,6 +415,347 @@ namespace DocumentFormat.OpenXml
 
             _isLeafTextElementStart = false;
         }
+
+        private static IOpenXmlNamespaceResolver Resolver => FeatureCollection.Default.GetNamespaceResolver();
+
+        // This writer tracks the default namespace for the start and end tags it writes itself, and only wraps _xmlWriter in the
+        // tracking XmlDOMTextWriter for WriteElement when needed, so the output is unchanged when no default namespace is involved.
+        private string CurrentDefaultNamespace => _defaultNamespaces.Count == 0 ? string.Empty : _defaultNamespaces.Peek().Uri;
+
+        // whether the default namespace in scope was configured or explicitly declared, rather than only passed through as an
+        // xmlns attribute (as OpenXmlPartReader does); only then may it change the prefixes that are written
+        private bool IsCurrentDefaultNamespaceOptedIn => _defaultNamespaces.Count > 0 && (_defaultNamespaces.Peek().IsOptedIn || IsConfiguredDefaultNamespace(_defaultNamespaces.Peek().Uri));
+
+        private bool IsConfiguredDefaultNamespace(string namespaceUri)
+            => namespaceUri.Length > 0 && namespaceUri == _rootNamespace && _namespacePrefixes.IsDefaultNamespaceForRoot(namespaceUri);
+
+        // the wrapper is reused, as WriteElement is called for every element of a large part
+        private XmlDOMTextWriter GetTrackingWriter(string defaultNamespace, bool? useDefaultNamespaceForRoot)
+        {
+            _trackingWriter ??= new XmlDOMTextWriter(_xmlWriter, defaultNamespace);
+            _trackingWriter.Reset(defaultNamespace, useDefaultNamespaceForRoot);
+            return _trackingWriter;
+        }
+
+        private void PopDefaultNamespace()
+        {
+            if (_defaultNamespaces.Count > 0)
+            {
+                _defaultNamespaces.Pop();
+            }
+        }
+
+        // a known element only has an empty prefix when its tree declares a default namespace; an unknown element keeps the prefix it was created or read with
+        private static bool IsEmptyPrefixFromTree(OpenXmlElement element) => element is not OpenXmlUnknownElement;
+
+        private static bool DeclaresOwnDefaultNamespace(OpenXmlElement element)
+            => element.NamespaceUri.Length > 0 && element.LookupNamespaceLocal(string.Empty) == element.NamespaceUri;
+
+        // the declarations and attributes may be read more than once, so a sequence that can only be read once is copied first
+        private static IEnumerable<T>? AsReusable<T>(IEnumerable<T>? items)
+            => items is null or ICollection<T> ? items : new List<T>(items);
+
+        private void WriteStartTag(string? prefix, string localName, string namespaceUri, bool elementDeclaresDefault, bool emptyPrefixFromTree, IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations)
+        {
+            // without settings or a default namespace in scope that may change prefixes, attributes are only read once, while writing them
+            var scanAttributes = _namespacePrefixes is not null || IsCurrentDefaultNamespaceOptedIn;
+
+            if (scanAttributes)
+            {
+                attributes = AsReusable(attributes);
+            }
+
+            namespaceDeclarations = AsReusable(namespaceDeclarations);
+
+            var rootPrefix = StartElementScope(ref prefix, namespaceUri, elementDeclaresDefault, emptyPrefixFromTree, scanAttributes ? attributes : null, namespaceDeclarations, out var skipLocalDefault);
+
+            _xmlWriter.WriteStartElement(prefix, localName, namespaceUri);
+
+            if (namespaceDeclarations is not null)
+            {
+                foreach (var item in namespaceDeclarations)
+                {
+                    if (!skipLocalDefault || item.Key.Length != 0)
+                    {
+                        _xmlWriter.WriteNamespaceDeclaration(item.Key, item.Value);
+                    }
+                }
+            }
+
+            if (rootPrefix is not null)
+            {
+                _xmlWriter.WriteNamespaceDeclaration(rootPrefix, namespaceUri);
+            }
+
+            string? attributeDefault = null;
+
+            if (attributes is not null)
+            {
+                foreach (var attribute in attributes)
+                {
+                    if (IsDefaultNamespaceDeclaration(attribute))
+                    {
+                        attributeDefault = attribute.Value;
+
+                        if (skipLocalDefault)
+                        {
+                            continue;
+                        }
+                    }
+
+                    _xmlWriter.WriteAttributeString(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value);
+                }
+            }
+
+            TrackAttributeDefaultNamespace(scanAttributes, attributeDefault);
+        }
+
+        /// <summary>
+        /// Chooses the prefix for an element's start tag and tracks the default namespace in scope for its content.
+        /// </summary>
+        /// <param name="prefix">The prefix of the element, updated to the prefix to write.</param>
+        /// <param name="namespaceUri">The namespace of the element.</param>
+        /// <param name="elementDeclaresDefault">Whether the element declares its own namespace as the default namespace.</param>
+        /// <param name="emptyPrefixFromTree">Whether an empty <paramref name="prefix"/> comes from a default namespace declared in the element's own tree, rather than from the source XML.</param>
+        /// <param name="attributes">The attributes to be written, which may declare namespaces, or null when they are not inspected.</param>
+        /// <param name="namespaceDeclarations">The namespace declarations to be written.</param>
+        /// <param name="skipLocalDefault">Whether a default namespace declaration in <paramref name="namespaceDeclarations"/> or <paramref name="attributes"/> must be skipped.</param>
+        /// <returns>The prefix to declare for the element's namespace when the root is written in the default namespace.</returns>
+        private string? StartElementScope(ref string? prefix, string namespaceUri, bool elementDeclaresDefault, bool emptyPrefixFromTree, IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations, out bool skipLocalDefault)
+        {
+            if (_defaultNamespaces.Count == 0)
+            {
+                _rootNamespace = namespaceUri;
+            }
+
+            var localDefault = FindDefaultNamespaceDeclaration(attributes, namespaceDeclarations, out var isAttribute);
+
+            if (localDefault is null && elementDeclaresDefault)
+            {
+                localDefault = namespaceUri;
+            }
+
+            // a default namespace passed through as an xmlns attribute (as OpenXmlPartReader does) only changes prefixes when it is configured
+            var localDefaultOptedIn = localDefault is not null && (!isAttribute || IsConfiguredDefaultNamespace(localDefault));
+
+            skipLocalDefault = false;
+            string? rootPrefix = null;
+
+            if (_defaultNamespaces.Count == 0 && _namespacePrefixes.IsDefaultNamespaceForRoot(namespaceUri))
+            {
+                prefix = string.Empty;
+                skipLocalDefault = localDefault is not null && localDefault != namespaceUri;
+                localDefault = namespaceUri;
+                localDefaultOptedIn = true;
+
+                // the content cannot be inspected in advance, so declare the prefix in case an attribute needs it
+                if (Resolver.LookupPrefix(namespaceUri) is { Length: > 0 } builtInPrefix && !IsDeclared(attributes, namespaceDeclarations, builtInPrefix, namespaceUri))
+                {
+                    rootPrefix = builtInPrefix;
+                }
+            }
+            else if (localDefault is not null)
+            {
+                if (localDefault == namespaceUri)
+                {
+                    if (localDefaultOptedIn)
+                    {
+                        prefix = string.Empty;
+                    }
+                }
+                else if (string.IsNullOrEmpty(prefix) && namespaceUri.Length > 0)
+                {
+                    // without a prefix the element would be in the default namespace, which it redefines to another uri
+                    prefix = Resolver.LookupPrefix(namespaceUri) is { Length: > 0 } builtInPrefix ? builtInPrefix : GeneratePrefix(attributes, namespaceDeclarations);
+                }
+            }
+            else if (namespaceUri.Length > 0 && CurrentDefaultNamespace == namespaceUri && IsCurrentDefaultNamespaceOptedIn)
+            {
+                prefix = string.Empty;
+            }
+            else if (emptyPrefixFromTree && prefix is { Length: 0 } && namespaceUri.Length > 0 && CurrentDefaultNamespace != namespaceUri)
+            {
+                // an empty prefix that comes from a default namespace declared in the element's own tree only applies if that
+                // default namespace is in scope here; otherwise every such element would redeclare it
+                prefix = _xmlWriter.LookupPrefix(namespaceUri) is { Length: > 0 } prefixInScope ? prefixInScope : Resolver.LookupPrefix(namespaceUri) ?? string.Empty;
+            }
+
+            // a null prefix lets the writer pick one, so resolve it here to know which default namespace is in scope
+            prefix ??= _xmlWriter.LookupPrefix(namespaceUri) ?? string.Empty;
+
+            if (localDefault is not null)
+            {
+                _defaultNamespaces.Push(new DefaultNamespaceScope(localDefault, localDefaultOptedIn));
+            }
+            else if (prefix.Length == 0 && CurrentDefaultNamespace != namespaceUri)
+            {
+                // the writer declares the element's namespace as the default namespace; it is opted in only when configured
+                _defaultNamespaces.Push(new DefaultNamespaceScope(namespaceUri, isOptedIn: false));
+            }
+            else
+            {
+                _defaultNamespaces.Push(_defaultNamespaces.Count == 0 ? new DefaultNamespaceScope(string.Empty, isOptedIn: false) : _defaultNamespaces.Peek());
+            }
+
+            return rootPrefix;
+        }
+
+        /// <summary>
+        /// Records a default namespace declared through the attributes when they were not inspected before the start tag was written.
+        /// </summary>
+        private void TrackAttributeDefaultNamespace(bool attributesWereScanned, string? attributeDefault)
+        {
+            if (!attributesWereScanned && attributeDefault is not null && _defaultNamespaces.Count > 0 && !_defaultNamespaces.Peek().IsOptedIn)
+            {
+                _defaultNamespaces.Pop();
+                _defaultNamespaces.Push(new DefaultNamespaceScope(attributeDefault, isOptedIn: false));
+            }
+        }
+
+        private static bool IsDefaultNamespaceDeclaration(OpenXmlAttribute attribute)
+            => string.IsNullOrEmpty(attribute.Prefix) && attribute.LocalName == OpenXmlElementContext.XmlnsPrefix;
+
+        /// <summary>
+        /// Finds a default namespace declaration in <paramref name="namespaceDeclarations"/>, or in <paramref name="attributes"/>,
+        /// which is how <see cref="OpenXmlPartReader"/> reports it.
+        /// </summary>
+        private static string? FindDefaultNamespaceDeclaration(IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations, out bool isAttribute)
+        {
+            string? localDefault = null;
+            isAttribute = false;
+
+            if (namespaceDeclarations is not null)
+            {
+                foreach (var item in namespaceDeclarations)
+                {
+                    if (item.Key.Length == 0)
+                    {
+                        localDefault = item.Value;
+                    }
+                }
+            }
+
+            if (attributes is not null)
+            {
+                foreach (var attribute in attributes)
+                {
+                    if (IsDefaultNamespaceDeclaration(attribute))
+                    {
+                        localDefault = attribute.Value;
+                        isAttribute = true;
+                    }
+                }
+            }
+
+            return localDefault;
+        }
+
+        /// <summary>
+        /// Gets a value indicating whether <paramref name="namespaceDeclarations"/> or <paramref name="attributes"/> declare
+        /// <paramref name="namespaceUri"/> with a prefix, or declare <paramref name="prefix"/>.
+        /// </summary>
+        private static bool IsDeclared(IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations, string prefix, string? namespaceUri)
+        {
+            if (namespaceDeclarations is not null)
+            {
+                foreach (var item in namespaceDeclarations)
+                {
+                    if (item.Key.Length != 0 && (item.Key == prefix || item.Value == namespaceUri))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (attributes is not null)
+            {
+                foreach (var attribute in attributes)
+                {
+                    if (attribute.Prefix == OpenXmlElementContext.XmlnsPrefix && (attribute.LocalName == prefix || attribute.Value == namespaceUri))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Generates a prefix that is not declared in <paramref name="namespaceDeclarations"/> or <paramref name="attributes"/>.
+        /// </summary>
+        private static string GeneratePrefix(IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations)
+            => NamespacePrefixGenerator.Generate(prefix => IsDeclared(attributes, namespaceDeclarations, prefix, namespaceUri: null));
+
+        private readonly struct DefaultNamespaceScope
+        {
+            public DefaultNamespaceScope(string uri, bool isOptedIn)
+            {
+                Uri = uri;
+                IsOptedIn = isOptedIn;
+            }
+
+            public string Uri { get; }
+
+            public bool IsOptedIn { get; }
+        }
+
+#if FEATURE_ASYNC_SAX_XML
+        private async Task WriteStartTagAsync(string? prefix, string localName, string namespaceUri, bool elementDeclaresDefault, bool emptyPrefixFromTree, IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations)
+        {
+            // without settings or a default namespace in scope that may change prefixes, attributes are only read once, while writing them
+            var scanAttributes = _namespacePrefixes is not null || IsCurrentDefaultNamespaceOptedIn;
+
+            if (scanAttributes)
+            {
+                attributes = AsReusable(attributes);
+            }
+
+            namespaceDeclarations = AsReusable(namespaceDeclarations);
+
+            var rootPrefix = StartElementScope(ref prefix, namespaceUri, elementDeclaresDefault, emptyPrefixFromTree, scanAttributes ? attributes : null, namespaceDeclarations, out var skipLocalDefault);
+
+            await _xmlWriter.WriteStartElementAsync(prefix, localName, namespaceUri).ConfigureAwait(true);
+
+            if (namespaceDeclarations is not null)
+            {
+                foreach (var item in namespaceDeclarations)
+                {
+                    if (!skipLocalDefault || item.Key.Length != 0)
+                    {
+                        await _xmlWriter.WriteNamespaceDeclarationAsync(item.Key, item.Value).ConfigureAwait(true);
+                    }
+                }
+            }
+
+            if (rootPrefix is not null)
+            {
+                await _xmlWriter.WriteNamespaceDeclarationAsync(rootPrefix, namespaceUri).ConfigureAwait(true);
+            }
+
+            string? attributeDefault = null;
+
+            if (attributes is not null)
+            {
+                foreach (var attribute in attributes)
+                {
+                    if (IsDefaultNamespaceDeclaration(attribute))
+                    {
+                        attributeDefault = attribute.Value;
+
+                        if (skipLocalDefault)
+                        {
+                            continue;
+                        }
+                    }
+
+                    await _xmlWriter.WriteAttributeStringAsync(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value).ConfigureAwait(true);
+                }
+            }
+
+            TrackAttributeDefaultNamespace(scanAttributes, attributeDefault);
+        }
+#endif
 
         #endregion
 
@@ -470,16 +800,7 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            await _xmlWriter.WriteStartElementAsync(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri).ConfigureAwait(true);
-
-            if (elementObject.HasAttributes)
-            {
-                // write attributes
-                foreach (var attribute in elementObject.GetAttributes())
-                {
-                    await _xmlWriter.WriteAttributeStringAsync(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value).ConfigureAwait(true);
-                }
-            }
+            await WriteStartTagAsync(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, DeclaresOwnDefaultNamespace(elementObject), IsEmptyPrefixFromTree(elementObject), elementObject.HasAttributes ? elementObject.GetAttributes() : null, namespaceDeclarations: null).ConfigureAwait(true);
 
             if (elementObject is OpenXmlLeafTextElement)
             {
@@ -526,24 +847,7 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            await _xmlWriter.WriteStartElementAsync(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri).ConfigureAwait(true);
-
-            if (namespaceDeclarations is not null)
-            {
-                foreach (var item in namespaceDeclarations)
-                {
-                    await _xmlWriter.WriteAttributeStringAsync(OpenXmlElementContext.XmlnsPrefix, item.Key, OpenXmlElementContext.XmlnsUri, item.Value).ConfigureAwait(true);
-                }
-            }
-
-            if (attributes is not null)
-            {
-                // write attributes
-                foreach (var attribute in attributes)
-                {
-                    await _xmlWriter.WriteAttributeStringAsync(attribute.Prefix, attribute.LocalName, attribute.NamespaceUri, attribute.Value).ConfigureAwait(true);
-                }
-            }
+            await WriteStartTagAsync(elementObject.Prefix, elementObject.LocalName, elementObject.NamespaceUri, DeclaresOwnDefaultNamespace(elementObject), IsEmptyPrefixFromTree(elementObject), attributes, namespaceDeclarations).ConfigureAwait(true);
 
             if (elementObject is OpenXmlLeafTextElement)
             {
@@ -563,6 +867,7 @@ namespace DocumentFormat.OpenXml
             ThrowIfObjectDisposed();
 
             _isLeafTextElementStart = false;
+            PopDefaultNamespace();
 
             return _xmlWriter.WriteEndElementAsync();
         }
