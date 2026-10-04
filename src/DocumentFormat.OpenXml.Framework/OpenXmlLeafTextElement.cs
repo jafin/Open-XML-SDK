@@ -196,7 +196,7 @@ namespace DocumentFormat.OpenXml
 
                             if (ShadowElement is null)
                             {
-                                ShadowElement = new OpenXmlUnknownElement(Prefix, LocalName, NamespaceUri);
+                                ShadowElement = new OpenXmlUnknownElement(GetWrapperPrefix(), LocalName, NamespaceUri);
                             }
 
                             ShadowElement.AppendChild(child);

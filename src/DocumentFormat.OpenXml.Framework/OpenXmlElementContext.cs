@@ -49,6 +49,11 @@ namespace DocumentFormat.OpenXml
         internal OpenXmlLoadMode LoadMode { get; set; } = OpenXmlLoadMode.Full;
 
         /// <summary>
+        /// Gets or sets a value indicating whether default namespace declarations (<c>xmlns="..."</c>) are kept when elements are loaded.
+        /// </summary>
+        internal bool PreserveDefaultNamespaceDeclarations { get; set; }
+
+        /// <summary>
         /// Gets layers to be full populated, only effective when LoadMode==Lazy.
         /// Start from 0 (populate only the children layer). The magic number of 3
         /// is currently used, but could potentially be made into a public property

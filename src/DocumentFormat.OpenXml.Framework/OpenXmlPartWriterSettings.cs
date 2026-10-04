@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using DocumentFormat.OpenXml.Packaging;
 using System.Text;
 
 namespace DocumentFormat.OpenXml;
@@ -26,4 +27,14 @@ public class OpenXmlPartWriterSettings
     /// Gets or sets the type of text encoding to use.
     /// </summary>
     public Encoding Encoding { get; set; } = Encoding.UTF8;
+
+    /// <summary>
+    /// Gets or sets the settings that control which namespace prefixes are written. When <c>null</c> (the default), a writer
+    /// created for a part uses the settings of the part or its package, and a writer created for a stream uses the built-in prefixes.
+    /// </summary>
+    /// <remarks>
+    /// When the root element is written in the default namespace, the built-in prefix of that namespace is declared on the root as
+    /// well, because the elements that follow cannot be inspected in advance to tell whether an attribute needs it.
+    /// </remarks>
+    public XmlNamespacePrefixSettings? NamespacePrefixes { get; set; }
 }

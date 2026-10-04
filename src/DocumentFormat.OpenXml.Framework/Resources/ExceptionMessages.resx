@@ -375,6 +375,12 @@
   <data name="DuplicatedPrefix" xml:space="preserve">
     <value>The prefix "{0}" is already defined in current node.</value>
   </data>
+  <data name="DefaultNamespaceOnElementWithoutNamespace" xml:space="preserve">
+    <value>A default namespace cannot be declared on an element that has no namespace, as the element would then be in that namespace.</value>
+  </data>
+  <data name="NamespacePrefixNotSupported" xml:space="preserve">
+    <value>The prefix "{0}" for namespace "{1}" is not supported. Only an empty prefix, which writes the namespace as the default namespace, is currently supported.</value>
+  </data>
   <data name="DocumentFileFormatVersionMismatch" xml:space="preserve">
     <value>You should not validate document preprocessed based on FileFormatVersions.{0} against FileFormatVersions.{1} constraints. The preprocessing file format version is set in OpenSettings. Also check the file format version setting in the OpenXmlValidator.</value>
   </data>

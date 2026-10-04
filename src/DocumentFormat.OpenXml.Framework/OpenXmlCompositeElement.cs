@@ -149,7 +149,7 @@ namespace DocumentFormat.OpenXml
                     {
                         using (var writer2 = new XmlDOMTextWriter(w))
                         {
-                            writer2.WriteStartElement(Prefix, LocalName, NamespaceUri);
+                            writer2.WriteStartElement(GetWrapperPrefix(), LocalName, NamespaceUri);
                             writer2.WriteRaw(value);
                             writer2.WriteEndElement();
                         }

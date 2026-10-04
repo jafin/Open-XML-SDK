@@ -128,14 +128,28 @@ namespace DocumentFormat.OpenXml
                 {
                     Debug.Assert(!string.IsNullOrEmpty(element.LocalName));
 
-                    if (!string.IsNullOrEmpty(element.Prefix))
+                    var prefix = element.Prefix;
+
+                    // XPath has no default namespace, so an element written in the default namespace still needs a prefix. The built-in
+                    // prefix may already be used for another namespace earlier in the path, so then use another one
+                    if (string.IsNullOrEmpty(prefix) && !string.IsNullOrEmpty(element.NamespaceUri))
                     {
-                        if (!namespaces.HasNamespace(element.Prefix))
+                        prefix = element.Features.GetNamespaceResolver().LookupPrefix(element.NamespaceUri);
+
+                        if (!string.IsNullOrEmpty(prefix) && namespaces.LookupNamespace(prefix) is { } bound && bound != element.NamespaceUri)
                         {
-                            namespaces.AddNamespace(element.Prefix, element.NamespaceUri);
+                            prefix = namespaces.LookupPrefix(element.NamespaceUri) is { Length: > 0 } existing ? existing : NamespacePrefixGenerator.Generate(namespaces.HasNamespace);
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(prefix))
+                    {
+                        if (!namespaces.HasNamespace(prefix))
+                        {
+                            namespaces.AddNamespace(prefix, element.NamespaceUri);
                         }
 
-                        xpath.Append(element.Prefix);
+                        xpath.Append(prefix);
                         xpath.Append(':');
                     }
                     else if (!string.IsNullOrEmpty(element.NamespaceUri))
