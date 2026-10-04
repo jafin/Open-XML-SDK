@@ -5,6 +5,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Wordprocessing;
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Xunit;
 
@@ -125,6 +126,31 @@ namespace DocumentFormat.OpenXml.Tests
             document.AddNamespaceDeclaration("ns0", "urn:a");
 
             Assert.Contains(@"<ns1:item xmlns=""urn:other"" xmlns:ns1=""urn:custom"" />", document.OuterXml);
+        }
+
+        [Fact]
+        public void RootBindingBuiltInPrefixToOtherNamespaceGetsGeneratedPrefix()
+        {
+            var document = new Document(new Body());
+            document.AddNamespaceDeclaration("w", "urn:zzz");
+
+            var root = System.Xml.Linq.XElement.Parse(document.OuterXml);
+
+            Assert.Equal(WordNs, root.Name.NamespaceName);
+            Assert.Equal(WordNs, root.Elements().Single().Name.NamespaceName);
+            Assert.Equal("urn:zzz", root.GetNamespaceOfPrefix("w")!.NamespaceName);
+        }
+
+        [Fact]
+        public void ElementBindingBuiltInPrefixToOtherNamespaceGetsGeneratedPrefix()
+        {
+            var paragraph = new Paragraph(new ParagraphProperties());
+            paragraph.AddNamespaceDeclaration("w", "urn:zzz");
+
+            var element = System.Xml.Linq.XElement.Parse(paragraph.OuterXml);
+
+            Assert.Equal(WordNs, element.Name.NamespaceName);
+            Assert.Equal(WordNs, element.Elements().Single().Name.NamespaceName);
         }
 
         [Fact]

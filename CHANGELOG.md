@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Fixed
 
 - A part root element now uses the prefix it declares for its own namespace instead of always using the built-in prefix.
+- `Clone` overloads that take `OpenSettings` now keep those settings on the clone, such as `AutoSave` and `MaxCharactersInPart`, instead of replacing them with the source package's settings.
+- Writing an element that binds its built-in prefix to another namespace in its own start tag, e.g. after `AddNamespaceDeclaration("w", "urn:other")` on a WordprocessingML element, no longer throws an `XmlException`; the element is written with a generated prefix.
 
 ## [3.4.1] - 2026-01-06
 

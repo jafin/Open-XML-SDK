@@ -283,8 +283,10 @@ public static class CloneableExtensions
                 ? source.Features.Get<IXmlNamespacePrefixFeature>()
                 : destination.Features.Get<IXmlNamespacePrefixFeature>();
 
-            // the feature is not rebuilt from the source's OpenSettings, whose namespace prefix settings may have been changed since
-            destination.SetOpenSettings(new(source.OpenSettings), namespacePrefixes);
+            // overloads without OpenSettings open the clone with the source's; overloads with OpenSettings keep the ones they were given.
+            // The feature is not rebuilt from the settings, whose namespace prefix settings may have been changed since
+            var settings = inheritNamespacePrefixes ? new OpenSettings(source.OpenSettings) : destination.OpenSettings;
+            destination.SetOpenSettings(settings, namespacePrefixes);
 
             if (inheritNamespacePrefixes)
             {

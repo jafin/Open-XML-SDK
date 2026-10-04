@@ -365,6 +365,21 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void CloneKeepsOpenSettingsPassedToClone()
+        {
+            using var stream = GetStream(TestFiles.Spreadsheet, true);
+            using var doc = SpreadsheetDocument.Open(stream, true);
+            var settings = new OpenSettings { AutoSave = false, MaxCharactersInPart = 1_000_000, NamespacePrefixes = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true } };
+
+            using var cloneStream = new MemoryStream();
+            using var clone = doc.Clone(cloneStream, true, settings);
+
+            Assert.False(clone.OpenSettings.AutoSave);
+            Assert.Equal(1_000_000, clone.OpenSettings.MaxCharactersInPart);
+            Assert.True(clone.OpenSettings.NamespacePrefixes!.UseDefaultNamespaceForRoot);
+        }
+
+        [Fact]
         public void CloneWithSettingsWithoutNamespacePrefixesUsesBuiltInPrefixes()
         {
             using var stream = GetStream(TestFiles.Spreadsheet, true);

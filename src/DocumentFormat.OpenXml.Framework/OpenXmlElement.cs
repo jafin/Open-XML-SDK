@@ -1506,7 +1506,15 @@ namespace DocumentFormat.OpenXml
 
             // if xmlWriter didn't find it, it means the node is constructed by user and is not in the tree yet
             // in this case, we use the predefined prefix
-            return Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
+            var builtInPrefix = Features.GetNamespaceResolver().LookupPrefix(QName.Namespace.Uri);
+
+            // the node may bind the built-in prefix to another namespace, which the same start tag cannot also use it for
+            if (!string.IsNullOrEmpty(builtInPrefix) && LookupNamespaceLocal(builtInPrefix!) is { } bound && bound != namespaceUri)
+            {
+                return GeneratePrefix();
+            }
+
+            return builtInPrefix;
         }
 
         /// <summary>
@@ -1581,7 +1589,8 @@ namespace DocumentFormat.OpenXml
                 return true;
             }
 
-            return NamespaceUri.Length > 0 && Parent is not null && IsTopOfWrite(xmlWriter) && LookupElementPrefix(NamespaceUri, includeConfiguredDefault: true) is { Length: 0 };
+            // the namespace is looked up through the element's metadata, so the cheaper checks come first
+            return Parent is not null && IsTopOfWrite(xmlWriter) && NamespaceUri.Length > 0 && LookupElementPrefix(NamespaceUri, includeConfiguredDefault: true) is { Length: 0 };
         }
 
         private static bool IsTopOfWrite(XmlWriter xmlWriter)

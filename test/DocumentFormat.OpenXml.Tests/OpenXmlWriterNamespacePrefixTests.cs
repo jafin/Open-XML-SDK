@@ -6,6 +6,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Xunit;
@@ -384,6 +385,51 @@ namespace DocumentFormat.OpenXml.Tests
             }
 
             Assert.Contains(@"<ns1:item xmlns=""urn:other"" xmlns:ns1=""urn:custom"" />", Read(stream));
+        }
+
+        [Fact]
+        public void StreamedElementBindingBuiltInPrefixToOtherNamespaceGetsGeneratedPrefix()
+        {
+            var document = new W.Document(new W.Body(new W.Paragraph()));
+            document.AddNamespaceDeclaration(string.Empty, WordNs);
+            var paragraph = document.Body!.GetFirstChild<W.Paragraph>()!;
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteStartElement(new W.Document());
+                writer.WriteStartElement(paragraph, Array.Empty<OpenXmlAttribute>(), new[] { new KeyValuePair<string, string>(string.Empty, "urn:o"), new KeyValuePair<string, string>("w", "urn:z") });
+                writer.WriteEndElement();
+                writer.WriteStartElement(new W.Paragraph(), Array.Empty<OpenXmlAttribute>(), new[] { new KeyValuePair<string, string>("w", "urn:z") });
+                writer.WriteEndElement();
+                writer.WriteEndElement();
+            }
+
+            var paragraphs = System.Xml.Linq.XElement.Parse(Read(stream)).Elements().ToList();
+
+            Assert.Equal(2, paragraphs.Count);
+            Assert.All(paragraphs, p => Assert.Equal(WordNs, p.Name.NamespaceName));
+        }
+
+        [Fact]
+        public void WriteElementInDefaultNamespaceScopeIgnoresSettingsOfItsPackage()
+        {
+            using var package = new MemoryStream();
+            using var doc = WordprocessingDocument.Create(package, WordprocessingDocumentType.Document).UseDefaultNamespaceForRoot();
+            var paragraph = new W.Paragraph(new W.Run());
+            doc.AddMainDocumentPart().Document = new W.Document(new W.Body(paragraph));
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream, new OpenXmlPartWriterSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true } }))
+            {
+                writer.WriteStartElement(new Worksheet());
+                writer.WriteElement(paragraph);
+                writer.WriteEndElement();
+            }
+
+            Assert.Contains($@"<w:p xmlns:w=""{WordNs}""><w:r /></w:p>", Read(stream));
         }
 
         [Fact]
