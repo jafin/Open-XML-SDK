@@ -200,8 +200,7 @@ namespace DocumentFormat.OpenXml
             {
                 if (NeedsTrackingWriter(xmlWriter))
                 {
-                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty);
-                    WriteTo(trackingWriter);
+                    WriteThroughTrackingWriter(xmlWriter);
                     return;
                 }
 

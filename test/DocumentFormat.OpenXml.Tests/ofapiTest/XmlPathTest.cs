@@ -133,6 +133,22 @@ namespace DocumentFormat.OpenXml.Tests
                 new NS("w", "http://schemas.openxmlformats.org/wordprocessingml/2006/main"));
         }
 
+        [Fact]
+        public void GetXPathDoesNotReuseBuiltInPrefixBoundToOtherNamespace()
+        {
+            const string WordNs = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+            var p = new Paragraph();
+            var body = new Body(p);
+            body.AddNamespaceDeclaration(string.Empty, WordNs);
+            var custom = new OpenXmlUnknownElement("w", "foo", "urn:custom");
+            custom.AppendChild(body);
+
+            AssertNamespace(XmlPath.GetXPath(p), @"/w:foo[1]/ns0:body[1]/ns0:p[1]",
+                new NS("w", "urn:custom"),
+                new NS("ns0", WordNs));
+        }
+
         private readonly struct NS
         {
             public NS(string prefix, string ns)

@@ -92,6 +92,42 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void UnknownElementWithEmptyPrefixDoesNotOptChildrenIntoDefaultNamespace()
+        {
+            var ext = new OpenXmlUnknownElement(string.Empty, "ext", WordNs);
+            ext.AppendChild(new Paragraph(new DocumentFormat.OpenXml.Wordprocessing.Run(new DocumentFormat.OpenXml.Wordprocessing.Text("a"))));
+            var document = new Document(new Body(ext.CloneNode(true)));
+
+            using var stream = new MemoryStream();
+            document.Save(stream);
+
+            Assert.Equal($@"<ext xmlns=""{WordNs}""><w:p xmlns:w=""{WordNs}""><w:r><w:t>a</w:t></w:r></w:p></ext>", ext.OuterXml);
+            Assert.Equal(
+                $@"<?xml version=""1.0"" encoding=""utf-8""?><w:document xmlns:w=""{WordNs}""><w:body><ext xmlns=""{WordNs}""><w:p><w:r><w:t>a</w:t></w:r></w:p></ext></w:body></w:document>",
+                Encoding.UTF8.GetString(stream.ToArray()));
+        }
+
+        [Fact]
+        public void RootWithDefaultDeclarationDeclaresBuiltInPrefixForAttributes()
+        {
+            var document = new Document(new Body(new Paragraph(new ParagraphProperties(new Justification { Val = JustificationValues.Center }))));
+            document.AddNamespaceDeclaration(string.Empty, WordNs);
+
+            Assert.Equal($@"<document xmlns:w=""{WordNs}"" xmlns=""{WordNs}""><body><p><pPr><jc w:val=""center"" /></pPr></p></body></document>", document.OuterXml);
+        }
+
+        [Fact]
+        public void GeneratedPrefixDoesNotHidePrefixDeclaredOnAncestor()
+        {
+            var element = new OpenXmlUnknownElement(string.Empty, "item", "urn:custom");
+            element.AddNamespaceDeclaration(string.Empty, "urn:other");
+            var document = new Document(new Body(element));
+            document.AddNamespaceDeclaration("ns0", "urn:a");
+
+            Assert.Contains(@"<ns1:item xmlns=""urn:other"" xmlns:ns1=""urn:custom"" />", document.OuterXml);
+        }
+
+        [Fact]
         public void ElementRedeclaringDefaultNamespaceGetsGeneratedPrefixWhenNoneIsKnown()
         {
             var element = new OpenXmlUnknownElement(string.Empty, "item", "urn:custom");

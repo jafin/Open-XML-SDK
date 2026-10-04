@@ -25,6 +25,9 @@ namespace DocumentFormat.OpenXml
 
         // the default namespace in scope for each element started by this writer
         private readonly Stack<DefaultNamespaceScope> _defaultNamespaces = new();
+
+        // for each element started by this writer, the prefixes it declares that a generated prefix could clash with
+        private readonly Stack<List<string>?> _generatedFormPrefixes = new();
         private XmlDOMTextWriter? _trackingWriter;
 
         // the namespace of the root element, the only one the settings can make the default namespace
@@ -385,9 +388,10 @@ namespace DocumentFormat.OpenXml
 
             ThrowIfObjectDisposed();
 
-            if (_defaultNamespaces.Count == 0 && elementObject is OpenXmlPartRootElement root && (_namespacePrefixes is not null || root.UsesConfiguredDefaultNamespace()))
+            if (_defaultNamespaces.Count == 0 && (elementObject is not OpenXmlPartRootElement root || _namespacePrefixes is not null || root.UsesConfiguredDefaultNamespace()))
             {
-                // this writer's settings decide whether the root is written in the default namespace, not the settings of the part the element belongs to
+                // this writer's settings decide whether the first element is written in the default namespace, as for WriteStartElement,
+                // not the settings of the part the element belongs to
                 elementObject.WriteTo(GetTrackingWriter(string.Empty, _namespacePrefixes.IsDefaultNamespaceForRoot(elementObject.NamespaceUri)));
             }
             else if (CurrentDefaultNamespace.Length > 0 && IsCurrentDefaultNamespaceOptedIn)
@@ -423,8 +427,8 @@ namespace DocumentFormat.OpenXml
         private string CurrentDefaultNamespace => _defaultNamespaces.Count == 0 ? string.Empty : _defaultNamespaces.Peek().Uri;
 
         // whether the default namespace in scope was configured or explicitly declared, rather than only passed through as an
-        // xmlns attribute (as OpenXmlPartReader does); only then may it change the prefixes that are written
-        private bool IsCurrentDefaultNamespaceOptedIn => _defaultNamespaces.Count > 0 && (_defaultNamespaces.Peek().IsOptedIn || IsConfiguredDefaultNamespace(_defaultNamespaces.Peek().Uri));
+        // xmlns attribute (as OpenXmlPartReader does); only then may it change the prefixes that are written. It is decided when the scope is pushed.
+        private bool IsCurrentDefaultNamespaceOptedIn => _defaultNamespaces.Count > 0 && _defaultNamespaces.Peek().IsOptedIn;
 
         private bool IsConfiguredDefaultNamespace(string namespaceUri)
             => namespaceUri.Length > 0 && namespaceUri == _rootNamespace && _namespacePrefixes.IsDefaultNamespaceForRoot(namespaceUri);
@@ -442,6 +446,7 @@ namespace DocumentFormat.OpenXml
             if (_defaultNamespaces.Count > 0)
             {
                 _defaultNamespaces.Pop();
+                _generatedFormPrefixes.Pop();
             }
         }
 
@@ -590,14 +595,60 @@ namespace DocumentFormat.OpenXml
             else if (prefix.Length == 0 && CurrentDefaultNamespace != namespaceUri)
             {
                 // the writer declares the element's namespace as the default namespace; it is opted in only when configured
-                _defaultNamespaces.Push(new DefaultNamespaceScope(namespaceUri, isOptedIn: false));
+                _defaultNamespaces.Push(new DefaultNamespaceScope(namespaceUri, IsConfiguredDefaultNamespace(namespaceUri)));
             }
             else
             {
                 _defaultNamespaces.Push(_defaultNamespaces.Count == 0 ? new DefaultNamespaceScope(string.Empty, isOptedIn: false) : _defaultNamespaces.Peek());
             }
 
+            _generatedFormPrefixes.Push(GetGeneratedFormPrefixes(prefix, rootPrefix, attributes, namespaceDeclarations));
+
             return rootPrefix;
+        }
+
+        /// <summary>
+        /// Gets the prefixes an element declares, or is written with, that have the form of a generated prefix, or null if there are none.
+        /// </summary>
+        private static List<string>? GetGeneratedFormPrefixes(string prefix, string? rootPrefix, IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations)
+        {
+            List<string>? result = null;
+
+            void Add(string candidate)
+            {
+                if (NamespacePrefixGenerator.CouldGenerate(candidate))
+                {
+                    (result ??= new()).Add(candidate);
+                }
+            }
+
+            Add(prefix);
+
+            if (rootPrefix is not null)
+            {
+                Add(rootPrefix);
+            }
+
+            if (namespaceDeclarations is not null)
+            {
+                foreach (var item in namespaceDeclarations)
+                {
+                    Add(item.Key);
+                }
+            }
+
+            if (attributes is not null)
+            {
+                foreach (var attribute in attributes)
+                {
+                    if (attribute.Prefix == OpenXmlElementContext.XmlnsPrefix)
+                    {
+                        Add(attribute.LocalName);
+                    }
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -608,7 +659,7 @@ namespace DocumentFormat.OpenXml
             if (!attributesWereScanned && attributeDefault is not null && _defaultNamespaces.Count > 0 && !_defaultNamespaces.Peek().IsOptedIn)
             {
                 _defaultNamespaces.Pop();
-                _defaultNamespaces.Push(new DefaultNamespaceScope(attributeDefault, isOptedIn: false));
+                _defaultNamespaces.Push(new DefaultNamespaceScope(attributeDefault, IsConfiguredDefaultNamespace(attributeDefault)));
             }
         }
 
@@ -682,10 +733,24 @@ namespace DocumentFormat.OpenXml
         }
 
         /// <summary>
-        /// Generates a prefix that is not declared in <paramref name="namespaceDeclarations"/> or <paramref name="attributes"/>.
+        /// Generates a prefix that is not declared in <paramref name="namespaceDeclarations"/> or <paramref name="attributes"/>, or by an
+        /// element this writer has started, so it does not hide a prefix their content may refer to.
         /// </summary>
-        private static string GeneratePrefix(IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations)
-            => NamespacePrefixGenerator.Generate(prefix => IsDeclared(attributes, namespaceDeclarations, prefix, namespaceUri: null));
+        private string GeneratePrefix(IEnumerable<OpenXmlAttribute>? attributes, IEnumerable<KeyValuePair<string, string>>? namespaceDeclarations)
+            => NamespacePrefixGenerator.Generate(prefix => IsDeclared(attributes, namespaceDeclarations, prefix, namespaceUri: null) || IsDeclaredInScope(prefix));
+
+        private bool IsDeclaredInScope(string prefix)
+        {
+            foreach (var prefixes in _generatedFormPrefixes)
+            {
+                if (prefixes is not null && prefixes.Contains(prefix))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         private readonly struct DefaultNamespaceScope
         {

@@ -130,10 +130,16 @@ namespace DocumentFormat.OpenXml
 
                     var prefix = element.Prefix;
 
-                    // XPath has no default namespace, so an element written in the default namespace still needs a prefix
+                    // XPath has no default namespace, so an element written in the default namespace still needs a prefix. The built-in
+                    // prefix may already be used for another namespace earlier in the path, so then use another one
                     if (string.IsNullOrEmpty(prefix) && !string.IsNullOrEmpty(element.NamespaceUri))
                     {
                         prefix = element.Features.GetNamespaceResolver().LookupPrefix(element.NamespaceUri);
+
+                        if (!string.IsNullOrEmpty(prefix) && namespaces.LookupNamespace(prefix) is { } bound && bound != element.NamespaceUri)
+                        {
+                            prefix = namespaces.LookupPrefix(element.NamespaceUri) is { Length: > 0 } existing ? existing : NamespacePrefixGenerator.Generate(namespaces.HasNamespace);
+                        }
                     }
 
                     if (!string.IsNullOrEmpty(prefix))

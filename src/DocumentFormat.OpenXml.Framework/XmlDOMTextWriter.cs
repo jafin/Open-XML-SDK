@@ -18,7 +18,7 @@ namespace DocumentFormat.OpenXml
 
         // XmlWriter.LookupPrefix prefers a prefixed binding over the default namespace when both map to the same
         // uri, so track the default namespace in scope ourselves to allow elements to be written without a prefix.
-        private readonly Stack<string> _defaultNamespaces = new();
+        private readonly Stack<Scope> _defaultNamespaces = new();
         private string? _pendingDefaultNamespace;
 
         public XmlDOMTextWriter(Stream stream)
@@ -51,7 +51,7 @@ namespace DocumentFormat.OpenXml
         {
             _writer = writer;
             _ownsWriter = false;
-            _defaultNamespaces.Push(defaultNamespace);
+            _defaultNamespaces.Push(new Scope(defaultNamespace, isOptedIn: true));
             _topLevelDepth = 1;
         }
 
@@ -62,16 +62,32 @@ namespace DocumentFormat.OpenXml
         internal void Reset(string defaultNamespace, bool? useDefaultNamespaceForRoot)
         {
             _defaultNamespaces.Clear();
-            _defaultNamespaces.Push(defaultNamespace);
+            _defaultNamespaces.Push(new Scope(defaultNamespace, isOptedIn: true));
             _pendingDefaultNamespace = null;
             UseDefaultNamespaceForRoot = useDefaultNamespaceForRoot;
             IsWritingRootInDefaultNamespace = false;
         }
 
         /// <summary>
-        /// Gets the default namespace in scope for the element currently being written.
+        /// Gets the default namespace in scope for the element currently being written, if it was opted in to: declared explicitly,
+        /// or used by an element written with <see cref="WriteStartElementInDefaultNamespace"/>. Otherwise, as for a default namespace
+        /// that only comes from an element written with an empty prefix, it is an empty string, so it does not change other prefixes.
         /// </summary>
-        internal string DefaultNamespace => _defaultNamespaces.Count == 0 ? string.Empty : _defaultNamespaces.Peek();
+        internal string DefaultNamespace => _defaultNamespaces.Count > 0 && _defaultNamespaces.Peek() is { IsOptedIn: true } scope ? scope.Uri : string.Empty;
+
+        /// <summary>
+        /// Writes the start tag of an element in the default namespace, which the elements below it may then use as well.
+        /// </summary>
+        internal void WriteStartElementInDefaultNamespace(string localName, string ns)
+        {
+            WriteStartElement(string.Empty, localName, ns);
+
+            if (_defaultNamespaces.Peek() is { IsOptedIn: false } scope)
+            {
+                _defaultNamespaces.Pop();
+                _defaultNamespaces.Push(new Scope(scope.Uri, isOptedIn: true));
+            }
+        }
 
         /// <summary>
         /// Gets or sets a value that, when set, decides whether a part root element written to this writer uses the default namespace,
@@ -113,8 +129,9 @@ namespace DocumentFormat.OpenXml
 
             if (_pendingDefaultNamespace is not null)
             {
+                // an explicit declaration opts in to the default namespace
                 _defaultNamespaces.Pop();
-                _defaultNamespaces.Push(_pendingDefaultNamespace);
+                _defaultNamespaces.Push(new Scope(_pendingDefaultNamespace, isOptedIn: true));
                 _pendingDefaultNamespace = null;
             }
         }
@@ -206,7 +223,9 @@ namespace DocumentFormat.OpenXml
             }
 
             _writer.WriteStartElement(prefix, localName, ns);
-            _defaultNamespaces.Push(prefix.Length == 0 ? ns : DefaultNamespace);
+
+            var current = _defaultNamespaces.Count == 0 ? new Scope(string.Empty, isOptedIn: false) : _defaultNamespaces.Peek();
+            _defaultNamespaces.Push(prefix.Length == 0 && ns != current.Uri ? new Scope(ns, isOptedIn: false) : current);
         }
 
         public override void WriteString(string? text)
@@ -243,6 +262,19 @@ namespace DocumentFormat.OpenXml
             {
                 _writer.Close();
             }
+        }
+
+        private readonly struct Scope
+        {
+            public Scope(string uri, bool isOptedIn)
+            {
+                Uri = uri;
+                IsOptedIn = isOptedIn;
+            }
+
+            public string Uri { get; }
+
+            public bool IsOptedIn { get; }
         }
 
         protected override void Dispose(bool disposing)

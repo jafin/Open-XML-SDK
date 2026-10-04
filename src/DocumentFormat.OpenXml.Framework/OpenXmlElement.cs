@@ -1090,14 +1090,11 @@ namespace DocumentFormat.OpenXml
             {
                 if (NeedsTrackingWriter(xmlWriter))
                 {
-                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty);
-                    WriteTo(trackingWriter);
+                    WriteThroughTrackingWriter(xmlWriter);
                     return;
                 }
 
-                var prefix = GetPrefixForWrite(xmlWriter, useWriterScope: true);
-
-                xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
+                WriteStartTag(xmlWriter, GetPrefixForWrite(xmlWriter, useWriterScope: true));
                 WriteAttributesTo(xmlWriter);
                 WriteContentTo(xmlWriter);
                 xmlWriter.WriteEndElement();
@@ -1498,7 +1495,10 @@ namespace DocumentFormat.OpenXml
 
                 // the ancestors are not written to xmlWriter when only this subtree is written (i.e. OuterXml), so check
                 // whether the tree puts the node the write starts at in the default namespace. Nodes below it resolve through xmlWriter.
-                if (canUseDefault && Parent is not null && IsTopOfWrite(xmlWriter) && LookupElementPrefix(namespaceUri, includeConfiguredDefault: true) is { Length: 0 })
+                // A writer with its own settings, like OpenXmlPartWriter, decides that instead of the tree.
+                if (canUseDefault && IsTopOfWrite(xmlWriter) && (xmlWriter is XmlDOMTextWriter { UseDefaultNamespaceForRoot: { } useDefaultNamespace }
+                    ? useDefaultNamespace
+                    : Parent is not null && LookupElementPrefix(namespaceUri, includeConfiguredDefault: true) is { Length: 0 }))
                 {
                     return string.Empty;
                 }
@@ -1539,6 +1539,31 @@ namespace DocumentFormat.OpenXml
         }
 
         /// <summary>
+        /// Writes the start tag of the current element with a prefix from <see cref="GetPrefixForWrite"/>. An empty prefix for its
+        /// namespace opts in to the default namespace, which the elements below it may then use as well.
+        /// </summary>
+        private protected void WriteStartTag(XmlWriter xmlWriter, string? prefix)
+        {
+            if (prefix is { Length: 0 } && NamespaceUri.Length > 0 && xmlWriter is XmlDOMTextWriter domWriter)
+            {
+                domWriter.WriteStartElementInDefaultNamespace(LocalName, NamespaceUri);
+            }
+            else
+            {
+                xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
+            }
+        }
+
+        /// <summary>
+        /// Writes the current element through a tracking <see cref="XmlDOMTextWriter"/> that wraps <paramref name="xmlWriter"/>.
+        /// </summary>
+        private protected void WriteThroughTrackingWriter(XmlWriter xmlWriter, bool? useDefaultNamespaceForRoot = null)
+        {
+            using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty) { UseDefaultNamespaceForRoot = useDefaultNamespaceForRoot };
+            WriteTo(trackingWriter);
+        }
+
+        /// <summary>
         /// Gets a value indicating whether the current element is written in, or declares, a default namespace that its content needs
         /// to be written without prefixes. Other writers cannot report the default namespace in scope, so they are then wrapped in a
         /// tracking <see cref="XmlDOMTextWriter"/>. The default namespace outside the element is never used: the element either declares
@@ -1563,9 +1588,9 @@ namespace DocumentFormat.OpenXml
             => xmlWriter is XmlDOMTextWriter domWriter ? domWriter.IsAtTopLevel : xmlWriter.WriteState is WriteState.Start or WriteState.Prolog;
 
         /// <summary>
-        /// Generates a prefix that is not declared on the current element.
+        /// Generates a prefix that is not declared on the current element or its ancestors, so it does not hide a prefix their content may refer to.
         /// </summary>
-        internal string GeneratePrefix() => NamespacePrefixGenerator.Generate(prefix => LookupNamespaceLocal(prefix) is not null);
+        internal string GeneratePrefix() => NamespacePrefixGenerator.Generate(prefix => LookupNamespace(prefix) is not null);
 
         /// <summary>
         /// Gets a value indicating whether the current element has an attribute in <paramref name="namespaceUri"/>. It is only

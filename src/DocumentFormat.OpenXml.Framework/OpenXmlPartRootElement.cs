@@ -308,14 +308,16 @@ namespace DocumentFormat.OpenXml
                 // other writers cannot report the default namespace in scope, which is needed to write the content without prefixes
                 if (xmlWriter is not XmlDOMTextWriter && (useDefaultNamespace || LookupNamespaceLocal(string.Empty) is not null))
                 {
-                    using var trackingWriter = new XmlDOMTextWriter(xmlWriter, string.Empty) { UseDefaultNamespaceForRoot = useDefaultNamespace };
-                    WriteTo(trackingWriter);
+                    WriteThroughTrackingWriter(xmlWriter, useDefaultNamespace);
                     return;
                 }
 
                 var prefix = useDefaultNamespace ? string.Empty : GetPrefixForWrite(xmlWriter, useWriterScope: Parent is not null);
 
-                xmlWriter.WriteStartElement(prefix, LocalName, NamespaceUri);
+                WriteStartTag(xmlWriter, prefix);
+
+                // the root is in its own default namespace, configured or declared, so attributes in it need the built-in prefix
+                var inDefaultNamespace = prefix is { Length: 0 } && NamespaceUri.Length > 0;
 
                 // the writer is per call, so it carries this for ShouldWriteNamespaceDeclaration rather than the element
                 if (xmlWriter is XmlDOMTextWriter domWriter)
@@ -326,7 +328,7 @@ namespace DocumentFormat.OpenXml
                 try
                 {
                     // fix bug #225919, write out all namespace into to root
-                    var hasAttributeInNamespace = WriteNamespaceAtributes(xmlWriter, useDefaultNamespace ? NamespaceUri : null, out var hoistedPrefixes);
+                    var hasAttributeInNamespace = WriteNamespaceAtributes(xmlWriter, inDefaultNamespace ? NamespaceUri : null, out var hoistedPrefixes);
 
                     if (hasAttributeInNamespace)
                     {

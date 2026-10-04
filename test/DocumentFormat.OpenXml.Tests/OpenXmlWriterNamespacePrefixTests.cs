@@ -337,6 +337,56 @@ namespace DocumentFormat.OpenXml.Tests
         }
 
         [Fact]
+        public void WriteElementOfFirstElementIgnoresSettingsOfItsPackage()
+        {
+            using var package = new MemoryStream();
+            using var doc = WordprocessingDocument.Create(package, WordprocessingDocumentType.Document).UseDefaultNamespaceForRoot();
+            var paragraph = new W.Paragraph(new W.Run());
+            doc.AddMainDocumentPart().Document = new W.Document(new W.Body(paragraph));
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteElement(paragraph);
+            }
+
+            Assert.Equal($@"<w:p xmlns:w=""{WordNs}""><w:r /></w:p>", Read(stream));
+        }
+
+        [Fact]
+        public void WriteElementOfFirstElementUsesWriterSettings()
+        {
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream, new OpenXmlPartWriterSettings { NamespacePrefixes = new XmlNamespacePrefixSettings { UseDefaultNamespaceForRoot = true } }))
+            {
+                writer.WriteElement(new W.Paragraph(new W.Run()));
+            }
+
+            Assert.Equal($@"<p xmlns=""{WordNs}""><r /></p>", Read(stream));
+        }
+
+        [Fact]
+        public void StreamedGeneratedPrefixDoesNotHidePrefixDeclaredOnAncestor()
+        {
+            var element = new OpenXmlUnknownElement(string.Empty, "item", "urn:custom");
+            element.AddNamespaceDeclaration(string.Empty, "urn:other");
+
+            using var stream = new MemoryStream();
+
+            using (var writer = new OpenXmlPartWriter(stream))
+            {
+                writer.WriteStartElement(new W.Document(), Array.Empty<OpenXmlAttribute>(), new[] { new KeyValuePair<string, string>("ns0", "urn:a") });
+                writer.WriteStartElement(element, Array.Empty<OpenXmlAttribute>());
+                writer.WriteEndElement();
+                writer.WriteEndElement();
+            }
+
+            Assert.Contains(@"<ns1:item xmlns=""urn:other"" xmlns:ns1=""urn:custom"" />", Read(stream));
+        }
+
+        [Fact]
         public void CopyingWithPresetLeavesNestedDefaultNamespaceAlone()
         {
             const string Nested = @"<foo xmlns=""urn:x""><x:bar xmlns:x=""urn:x"" /></foo>";

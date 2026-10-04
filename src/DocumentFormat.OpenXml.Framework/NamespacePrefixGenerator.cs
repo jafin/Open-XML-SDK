@@ -15,7 +15,7 @@ namespace DocumentFormat.OpenXml
         {
             for (var i = 0; ; i++)
             {
-                var prefix = "ns" + i.ToString(CultureInfo.InvariantCulture);
+                var prefix = Prefix + i.ToString(CultureInfo.InvariantCulture);
 
                 if (!isDeclared(prefix))
                 {
@@ -23,5 +23,28 @@ namespace DocumentFormat.OpenXml
                 }
             }
         }
+
+        /// <summary>
+        /// Gets a value indicating whether <paramref name="prefix"/> has the form of a generated prefix, so it may clash with one.
+        /// </summary>
+        public static bool CouldGenerate(string prefix)
+        {
+            if (prefix.Length <= Prefix.Length || !prefix.StartsWith(Prefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            for (var i = Prefix.Length; i < prefix.Length; i++)
+            {
+                if (prefix[i] is < '0' or > '9')
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private const string Prefix = "ns";
     }
 }
